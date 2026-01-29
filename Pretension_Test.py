@@ -98,13 +98,15 @@ class PretensionTest(QtCore.QObject):
     def _perform_zeroing(self):
         """멈춘 뒤 자동으로 0점을 잡는 함수"""
         logger.info("[PreTension] 자동 0점 설정(Zeroing) 시작...")
-        
+        zeroing_success = True
+
         # 1. 로드셀 0점
         try:
             self.lc_service.zero_position()
             logger.info("[PreTension] 로드셀 0점 완료")
         except Exception as e:
             logger.error(f"[PreTension] 로드셀 0점 실패: {e}")
+            zeroing_success = False
 
         # 2. 모터 0점 (현재 위치를 0으로 인식)
         try:
@@ -112,8 +114,12 @@ class PretensionTest(QtCore.QObject):
             logger.info("[PreTension] 모터 엔코더 0점 완료")
         except Exception as e:
             logger.error(f"[PreTension] 모터 0점 실패: {e}")
+            zeroing_success = False
 
-        logger.info("[PreTension] 모든 과정 완료.")
+        if zeroing_success:
+            logger.info("[PreTension] 모든 과정 완료")
+        else:
+            logger.warning("[PreTension] 일부 과정 실패")
         
         # Main.py에 완료 신호 보냄 (메시지창 표시용)
         self.finished.emit()

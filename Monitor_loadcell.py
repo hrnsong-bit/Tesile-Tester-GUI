@@ -96,7 +96,11 @@ class LoadcellWorker(QtCore.QObject):
         """워커 스레드의 메인 루프. _running 플래그가 True인 동안 반복."""
         self._running = True
         logger.info("워커 스레드 시작.")
-        
+        self.loop_timer = QtCore.QTimer()
+        self.loop_timer.setInterval(self.interval_ms)
+        self.loop_timer.timeout.connect(self._do_work)
+        self.loop_timer.start()
+
         while self._running:
             loop_start_time = time.time()
             

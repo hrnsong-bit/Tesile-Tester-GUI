@@ -196,6 +196,9 @@ class MotorService:
             
             # 2. 32-bit 펄스 값을 16-bit 레지스터 2개로 분리
             s32_pulses = int(target_pulses)
+            if not (-2147483648 <= s32_pulses <= 2147483647):
+                logger.error(f"펄스 값 범위 초과: {s32_pulses}")
+                return False
             u32_pulses = s32_pulses & 0xFFFFFFFF 
             
             hi = (u32_pulses >> 16) & 0xFFFF

@@ -1,12 +1,12 @@
-# -*- coding: utf-8 -*-
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-
+from pyqtgraph import PlotWidget
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(1197, 844)
+        # 가로 크기를 1280으로 늘려 3개의 COM Box가 잘 보이도록 조정함
+        MainWindow.resize(1280, 844) 
         MainWindow.setAutoFillBackground(True)
         MainWindow.setDocumentMode(False)
         MainWindow.setDockNestingEnabled(False)
@@ -15,22 +15,36 @@ class Ui_MainWindow(object):
         self.centralwidget.setObjectName("centralwidget")
         self.gridLayout = QtWidgets.QGridLayout(self.centralwidget)
         self.gridLayout.setObjectName("gridLayout")
+        
+        # 메인 탭 위젯
         self.Main_tabWidget = QtWidgets.QTabWidget(self.centralwidget)
         self.Main_tabWidget.setObjectName("Main_tabWidget")
+        
+        # =================================================================
+        # 1. COM Set 탭 (tab_2)
+        # =================================================================
         self.tab_2 = QtWidgets.QWidget()
         self.tab_2.setObjectName("tab_2")
         self.verticalLayoutWidget = QtWidgets.QWidget(self.tab_2)
-        self.verticalLayoutWidget.setGeometry(QtCore.QRect(0, 0, 1181, 751))
+        # 가로 폭에 맞춰 geometry 조정
+        self.verticalLayoutWidget.setGeometry(QtCore.QRect(0, 0, 1260, 751))
         self.verticalLayoutWidget.setObjectName("verticalLayoutWidget")
         self.verticalLayout = QtWidgets.QVBoxLayout(self.verticalLayoutWidget)
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout.setObjectName("verticalLayout")
+        
         spacerItem = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
         self.verticalLayout.addItem(spacerItem)
+        
         self.horizontalLayout = QtWidgets.QHBoxLayout()
         self.horizontalLayout.setObjectName("horizontalLayout")
+        
         spacerItem1 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout.addItem(spacerItem1)
+        
+        # -------------------------------------------------------
+        # [1] Motor COM GroupBox
+        # -------------------------------------------------------
         self.COM_groupBox = QtWidgets.QGroupBox(self.verticalLayoutWidget)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
         sizePolicy.setHorizontalStretch(0)
@@ -51,7 +65,6 @@ class Ui_MainWindow(object):
         spacerItem3 = QtWidgets.QSpacerItem(98, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_3.addItem(spacerItem3)
         self.Com_label = QtWidgets.QLabel(self.COM_groupBox)
-        # self.Com_label.setMinimumSize(QtCore.QSize(70, 0)) # [!!] 수정됨
         self.Com_label.setTextFormat(QtCore.Qt.AutoText)
         self.Com_label.setScaledContents(False)
         self.Com_label.setObjectName("Com_label")
@@ -76,7 +89,6 @@ class Ui_MainWindow(object):
         spacerItem7 = QtWidgets.QSpacerItem(30, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_4.addItem(spacerItem7)
         self.Baud_label = QtWidgets.QLabel(self.COM_groupBox)
-        # self.Baud_label.setMinimumSize(QtCore.QSize(70, 0)) # [!!] 수정됨
         self.Baud_label.setObjectName("Baud_label")
         self.horizontalLayout_4.addWidget(self.Baud_label)
         self.Baud_comboBox = QtWidgets.QComboBox(self.COM_groupBox)
@@ -113,6 +125,10 @@ class Ui_MainWindow(object):
         self.verticalLayout_2.addItem(spacerItem12)
         self.gridLayout_14.addLayout(self.verticalLayout_2, 0, 0, 1, 1)
         self.horizontalLayout.addWidget(self.COM_groupBox, 0, QtCore.Qt.AlignHCenter|QtCore.Qt.AlignVCenter)
+        
+        # -------------------------------------------------------
+        # [2] LoadCell COM GroupBox
+        # -------------------------------------------------------
         self.COM_groupBox_2 = QtWidgets.QGroupBox(self.verticalLayoutWidget)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
         sizePolicy.setHorizontalStretch(0)
@@ -133,7 +149,6 @@ class Ui_MainWindow(object):
         spacerItem14 = QtWidgets.QSpacerItem(98, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_28.addItem(spacerItem14)
         self.Com_label_2 = QtWidgets.QLabel(self.COM_groupBox_2)
-        # self.Com_label_2.setMinimumSize(QtCore.QSize(70, 0)) # [!!] 수정됨
         self.Com_label_2.setTextFormat(QtCore.Qt.AutoText)
         self.Com_label_2.setScaledContents(False)
         self.Com_label_2.setObjectName("Com_label_2")
@@ -158,7 +173,6 @@ class Ui_MainWindow(object):
         spacerItem18 = QtWidgets.QSpacerItem(30, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_29.addItem(spacerItem18)
         self.Baud_label_2 = QtWidgets.QLabel(self.COM_groupBox_2)
-        # self.Baud_label_2.setMinimumSize(QtCore.QSize(70, 0)) # [!!] 수정됨
         self.Baud_label_2.setObjectName("Baud_label_2")
         self.horizontalLayout_29.addWidget(self.Baud_label_2)
         self.Baud_comboBox_2 = QtWidgets.QComboBox(self.COM_groupBox_2)
@@ -195,12 +209,115 @@ class Ui_MainWindow(object):
         self.verticalLayout_25.addItem(spacerItem23)
         self.gridLayout_15.addLayout(self.verticalLayout_25, 0, 0, 1, 1)
         self.horizontalLayout.addWidget(self.COM_groupBox_2)
+        
+        # -------------------------------------------------------
+        # [3] Temp Controller COM GroupBox (새로 추가)
+        # -------------------------------------------------------
+        self.COM_groupBox_3 = QtWidgets.QGroupBox(self.verticalLayoutWidget)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.COM_groupBox_3.sizePolicy().hasHeightForWidth())
+        self.COM_groupBox_3.setSizePolicy(sizePolicy)
+        self.COM_groupBox_3.setMinimumSize(QtCore.QSize(400, 400))
+        self.COM_groupBox_3.setMaximumSize(QtCore.QSize(400, 400))
+        self.COM_groupBox_3.setObjectName("COM_groupBox_3")
+        self.gridLayout_Temp = QtWidgets.QGridLayout(self.COM_groupBox_3)
+        self.gridLayout_Temp.setObjectName("gridLayout_Temp")
+        self.verticalLayout_Temp = QtWidgets.QVBoxLayout()
+        self.verticalLayout_Temp.setObjectName("verticalLayout_Temp")
+        
+        spacerItem_T1 = QtWidgets.QSpacerItem(20, 88, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self.verticalLayout_Temp.addItem(spacerItem_T1)
+        
+        # COM Port Row
+        self.horizontalLayout_T1 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_T1.setObjectName("horizontalLayout_T1")
+        spacerItem_T2 = QtWidgets.QSpacerItem(98, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_T1.addItem(spacerItem_T2)
+        self.Com_label_3 = QtWidgets.QLabel(self.COM_groupBox_3)
+        self.Com_label_3.setTextFormat(QtCore.Qt.AutoText)
+        self.Com_label_3.setScaledContents(False)
+        self.Com_label_3.setObjectName("Com_label_3")
+        self.horizontalLayout_T1.addWidget(self.Com_label_3)
+        spacerItem_T3 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_T1.addItem(spacerItem_T3)
+        self.Com_comboBox_3 = QtWidgets.QComboBox(self.COM_groupBox_3)
+        self.Com_comboBox_3.setMinimumSize(QtCore.QSize(90, 20))
+        self.Com_comboBox_3.setMaximumSize(QtCore.QSize(90, 20))
+        self.Com_comboBox_3.setObjectName("Com_comboBox_3")
+        self.horizontalLayout_T1.addWidget(self.Com_comboBox_3)
+        self.Comrefresh_pushButton_3 = QtWidgets.QPushButton(self.COM_groupBox_3)
+        self.Comrefresh_pushButton_3.setObjectName("Comrefresh_pushButton_3")
+        self.horizontalLayout_T1.addWidget(self.Comrefresh_pushButton_3)
+        spacerItem_T4 = QtWidgets.QSpacerItem(98, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_T1.addItem(spacerItem_T4)
+        self.verticalLayout_Temp.addLayout(self.horizontalLayout_T1)
+        
+        spacerItem_T5 = QtWidgets.QSpacerItem(20, 13, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        self.verticalLayout_Temp.addItem(spacerItem_T5)
+        
+        # Baud Rate Row
+        self.horizontalLayout_T2 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_T2.setObjectName("horizontalLayout_T2")
+        spacerItem_T6 = QtWidgets.QSpacerItem(30, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_T2.addItem(spacerItem_T6)
+        self.Baud_label_3 = QtWidgets.QLabel(self.COM_groupBox_3)
+        self.Baud_label_3.setObjectName("Baud_label_3")
+        self.horizontalLayout_T2.addWidget(self.Baud_label_3)
+        self.Baud_comboBox_3 = QtWidgets.QComboBox(self.COM_groupBox_3)
+        self.Baud_comboBox_3.setMinimumSize(QtCore.QSize(90, 20))
+        self.Baud_comboBox_3.setMaximumSize(QtCore.QSize(90, 20))
+        self.Baud_comboBox_3.setObjectName("Baud_comboBox_3")
+        self.horizontalLayout_T2.addWidget(self.Baud_comboBox_3)
+        spacerItem_T7 = QtWidgets.QSpacerItem(155, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_T2.addItem(spacerItem_T7)
+        self.verticalLayout_Temp.addLayout(self.horizontalLayout_T2)
+        
+        spacerItem_T8 = QtWidgets.QSpacerItem(20, 38, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        self.verticalLayout_Temp.addItem(spacerItem_T8)
+        
+        self.horizontalLayout_T3 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_T3.setObjectName("horizontalLayout_T3")
+        self.verticalLayout_Temp.addLayout(self.horizontalLayout_T3)
+        
+        spacerItem_T9 = QtWidgets.QSpacerItem(20, 38, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        self.verticalLayout_Temp.addItem(spacerItem_T9)
+        
+        # Connect/Disconnect Buttons
+        self.horizontalLayout_T4 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_T4.setObjectName("horizontalLayout_T4")
+        self.Comconnect_pushButton_3 = QtWidgets.QPushButton(self.COM_groupBox_3)
+        self.Comconnect_pushButton_3.setMinimumSize(QtCore.QSize(90, 30))
+        self.Comconnect_pushButton_3.setMaximumSize(QtCore.QSize(90, 30))
+        self.Comconnect_pushButton_3.setObjectName("Comconnect_pushButton_3")
+        self.horizontalLayout_T4.addWidget(self.Comconnect_pushButton_3)
+        spacerItem_T10 = QtWidgets.QSpacerItem(28, 20, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_T4.addItem(spacerItem_T10)
+        self.Comdisconnect_pushButton_3 = QtWidgets.QPushButton(self.COM_groupBox_3)
+        self.Comdisconnect_pushButton_3.setMinimumSize(QtCore.QSize(90, 30))
+        self.Comdisconnect_pushButton_3.setMaximumSize(QtCore.QSize(90, 30))
+        self.Comdisconnect_pushButton_3.setObjectName("Comdisconnect_pushButton_3")
+        self.horizontalLayout_T4.addWidget(self.Comdisconnect_pushButton_3)
+        self.verticalLayout_Temp.addLayout(self.horizontalLayout_T4)
+        
+        spacerItem_T11 = QtWidgets.QSpacerItem(20, 88, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self.verticalLayout_Temp.addItem(spacerItem_T11)
+        self.gridLayout_Temp.addLayout(self.verticalLayout_Temp, 0, 0, 1, 1)
+        
+        self.horizontalLayout.addWidget(self.COM_groupBox_3)
+
         spacerItem24 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout.addItem(spacerItem24)
+        
         self.verticalLayout.addLayout(self.horizontalLayout)
         spacerItem25 = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
         self.verticalLayout.addItem(spacerItem25)
         self.Main_tabWidget.addTab(self.tab_2, "")
+        
+        # =================================================================
+        # 2. Setting 탭 (tab)
+        # =================================================================
         self.tab = QtWidgets.QWidget()
         self.tab.setObjectName("tab")
         self.horizontalLayoutWidget = QtWidgets.QWidget(self.tab)
@@ -226,8 +343,6 @@ class Ui_MainWindow(object):
         self.horizontalLayout_6 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_6.setObjectName("horizontalLayout_6")
         self.Load0Currentnow_labeltxt = QtWidgets.QLabel(self.Load0_groupBox)
-        # self.Load0Currentnow_labeltxt.setMinimumSize(QtCore.QSize(150, 20)) # [!!] 수정됨
-        # self.Load0Currentnow_labeltxt.setMaximumSize(QtCore.QSize(150, 20)) # [!!] 수정됨
         self.Load0Currentnow_labeltxt.setObjectName("Load0Currentnow_labeltxt")
         self.horizontalLayout_6.addWidget(self.Load0Currentnow_labeltxt)
         self.Load0Currentnow_label = QtWidgets.QLabel(self.Load0_groupBox)
@@ -280,8 +395,6 @@ class Ui_MainWindow(object):
         self.horizontalLayout_10 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_10.setObjectName("horizontalLayout_10")
         self.En0Positionnow_labeltxt = QtWidgets.QLabel(self.En0_groupBox)
-        # self.En0Positionnow_labeltxt.setMinimumSize(QtCore.QSize(150, 20)) # [!!] 수정됨
-        # self.En0Positionnow_labeltxt.setMaximumSize(QtCore.QSize(150, 20)) # [!!] 수정됨
         self.En0Positionnow_labeltxt.setObjectName("En0Positionnow_labeltxt")
         self.horizontalLayout_10.addWidget(self.En0Positionnow_labeltxt, 0, QtCore.Qt.AlignHCenter|QtCore.Qt.AlignVCenter)
         self.En0Positionnow_label = QtWidgets.QLabel(self.En0_groupBox)
@@ -334,7 +447,6 @@ class Ui_MainWindow(object):
         hz_layout.addStretch()
         hz_layout.addWidget(self.hz_set_pushButton)
         self.hz_groupBox.setLayout(hz_layout)
-        # HZ 그룹박스를 verticalLayout_4에 추가
         self.verticalLayout_4.addWidget(self.hz_groupBox)
         self.verticalLayout_4.addWidget(self.En0_groupBox)
         spacerItem40 = QtWidgets.QSpacerItem(17, 34, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
@@ -350,7 +462,6 @@ class Ui_MainWindow(object):
         self.verticalLayout_7 = QtWidgets.QVBoxLayout()
         self.verticalLayout_7.setObjectName("verticalLayout_7")
         self.Com_label_8 = QtWidgets.QLabel(self.Safty_groupBox)
-        # self.Com_label_8.setMinimumSize(QtCore.QSize(50, 0)) # [!!] 수정됨
         font = QtGui.QFont()
         font.setPointSize(16)
         font.setBold(True)
@@ -373,7 +484,6 @@ class Ui_MainWindow(object):
         spacerItem43 = QtWidgets.QSpacerItem(25, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_12.addItem(spacerItem43)
         self.Com_label_6 = QtWidgets.QLabel(self.Safty_groupBox)
-        # self.Com_label_6.setMinimumSize(QtCore.QSize(50, 0)) # [!!] 수정됨
         self.Com_label_6.setObjectName("Com_label_6")
         self.horizontalLayout_12.addWidget(self.Com_label_6)
         self.verticalLayout_7.addLayout(self.horizontalLayout_12)
@@ -389,7 +499,6 @@ class Ui_MainWindow(object):
         spacerItem44 = QtWidgets.QSpacerItem(25, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_13.addItem(spacerItem44)
         self.Com_label_12 = QtWidgets.QLabel(self.Safty_groupBox)
-        # self.Com_label_12.setMinimumSize(QtCore.QSize(50, 0)) # [!!] 수정됨
         self.Com_label_12.setObjectName("Com_label_12")
         self.horizontalLayout_13.addWidget(self.Com_label_12)
         self.verticalLayout_7.addLayout(self.horizontalLayout_13)
@@ -401,7 +510,6 @@ class Ui_MainWindow(object):
         self.line.setObjectName("line")
         self.verticalLayout_7.addWidget(self.line)
         self.Com_label_10 = QtWidgets.QLabel(self.Safty_groupBox)
-        # self.Com_label_10.setMinimumSize(QtCore.QSize(50, 0)) # [!!] 수정됨
         font = QtGui.QFont()
         font.setPointSize(16)
         font.setBold(True)
@@ -424,7 +532,6 @@ class Ui_MainWindow(object):
         spacerItem47 = QtWidgets.QSpacerItem(25, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_14.addItem(spacerItem47)
         self.Com_label_13 = QtWidgets.QLabel(self.Safty_groupBox)
-        # self.Com_label_13.setMinimumSize(QtCore.QSize(50, 0)) # [!!] 수정됨
         self.Com_label_13.setObjectName("Com_label_13")
         self.horizontalLayout_14.addWidget(self.Com_label_13)
         self.verticalLayout_7.addLayout(self.horizontalLayout_14)
@@ -433,7 +540,6 @@ class Ui_MainWindow(object):
         spacerItem48 = QtWidgets.QSpacerItem(25, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_15.addItem(spacerItem48)
         self.Com_label_14 = QtWidgets.QLabel(self.Safty_groupBox)
-        # self.Com_label_14.setMinimumSize(QtCore.QSize(50, 0)) # [!!] 수정됨
         self.Com_label_14.setObjectName("Com_label_14")
         self.horizontalLayout_15.addWidget(self.Com_label_14)
         self.verticalLayout_7.addLayout(self.horizontalLayout_15)
@@ -472,7 +578,6 @@ class Ui_MainWindow(object):
         self.MotorSpeed_spinBox.setMaximum(5000)
         self.horizontalLayout_7.addWidget(self.MotorSpeed_spinBox)
         self.MotorSpeedUnit_label = QtWidgets.QLabel(self.Motspeed_groupBox)
-        # self.MotorSpeedUnit_label.setMinimumSize(QtCore.QSize(50, 0)) # [!!] 수정됨
         self.MotorSpeedUnit_label.setObjectName("MotorSpeedUnit_label")
         self.horizontalLayout_7.addWidget(self.MotorSpeedUnit_label)
         spacerItem55 = QtWidgets.QSpacerItem(28, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
@@ -581,7 +686,6 @@ class Ui_MainWindow(object):
         self.Jog_spinBox.setMaximum(5000)
         self.horizontalLayout_33.addWidget(self.Jog_spinBox)
         self.Com_label_15 = QtWidgets.QLabel(self.groupBox_9)
-        # self.Com_label_15.setMinimumSize(QtCore.QSize(50, 0)) # [!!] 수정됨
         self.Com_label_15.setObjectName("Com_label_15")
         self.horizontalLayout_33.addWidget(self.Com_label_15)
         spacerItem70 = QtWidgets.QSpacerItem(28, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
@@ -702,7 +806,7 @@ class Ui_MainWindow(object):
         
         self.tension_groupBox = QtWidgets.QGroupBox(self.horizontalLayoutWidget)
         self.tension_groupBox.setObjectName("tension_groupBox")
-        self.tension_groupBox.setTitle("시편 텐셔닝 (Pre-Tension)")
+        self.tension_groupBox.setTitle("Pre-Tension")
         tension_layout_grid = QtWidgets.QGridLayout(self.tension_groupBox)
         tension_layout_grid.setObjectName("tension_layout_grid")
 
@@ -752,6 +856,109 @@ class Ui_MainWindow(object):
         spacerItem87 = QtWidgets.QSpacerItem(40, 17, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_39.addItem(spacerItem87)
         self.Main_tabWidget.addTab(self.tab, "")
+        
+        # =================================================================
+        # 3. Temp 탭 - 4채널 온도 표시 및 설정
+        # =================================================================
+        self.tab_new = QtWidgets.QWidget()
+        self.tab_new.setObjectName("Temp")
+        
+        # 메인 가로 레이아웃
+        self.temp_main_layout = QtWidgets.QHBoxLayout(self.tab_new)
+        self.temp_main_layout.setObjectName("temp_main_layout")
+
+        # --- [1] 왼쪽 채널 컨트롤 패널 ---
+        self.temp_ctrl_group = QtWidgets.QGroupBox(self.tab_new)
+        self.temp_ctrl_group.setTitle("Channel Monitor & Control")
+        self.temp_ctrl_group.setFixedWidth(320) # 기존 너비 유지
+        self.ctrl_vbox = QtWidgets.QVBoxLayout(self.temp_ctrl_group)
+        
+        # 채널별 위젯 참조 딕셔너리
+        self.temp_channels = {}
+        colors = ['#EA002C', '#00A0E9', '#9BCF0A', '#F47725']
+
+        for i in range(1, 5):
+            channel_row = QtWidgets.QHBoxLayout()
+            
+            chk = QtWidgets.QCheckBox(f"CH {i} Display")
+            chk.setChecked(True)
+            chk.setStyleSheet(f"color: {colors[i-1]}; font-weight: bold; font-size: 11pt;")
+            
+            lbl = QtWidgets.QLabel("0.0 °C")
+            lbl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            lbl.setMinimumSize(QtCore.QSize(100, 35))
+            lbl.setStyleSheet("""
+                font-size: 16pt; 
+                font-family: 'Consolas'; 
+                background-color: #F8F8F8; 
+                border: 1px solid #CCCCCC; 
+                padding-right: 5px;
+                border-radius: 4px;
+            """)
+            
+            channel_row.addWidget(chk)
+            channel_row.addWidget(lbl)
+            self.ctrl_vbox.addLayout(channel_row)
+            
+            self.temp_channels[i] = {"chk": chk, "lbl": lbl, "color": colors[i-1]}
+            self.ctrl_vbox.addSpacing(10)
+
+        # --- 구분선 추가 (에러 없는 방식) ---
+        line = QtWidgets.QFrame()
+        line.setFrameShape(QtWidgets.QFrame.HLine)
+        line.setFrameShadow(QtWidgets.QFrame.Sunken)
+        self.ctrl_vbox.addWidget(line)
+        self.ctrl_vbox.addSpacing(10)
+
+        # --- [요청 기능] CH1 SV 입력 및 오토튜닝 ON/OFF ---
+        self.temp_setting_group = QtWidgets.QGroupBox("Control Settings")
+        self.temp_setting_form = QtWidgets.QFormLayout(self.temp_setting_group)
+
+        # CH1 SV 입력 (Address: 0x0000) [cite: 866]
+        self.temp_sv_input = QtWidgets.QDoubleSpinBox()
+        self.temp_sv_input.setRange(-200.0, 500.0) # TM4 입력 범위 [cite: 876]
+        self.temp_sv_input.setDecimals(1)
+        self.temp_sv_input.setSuffix(" °C")
+        self.temp_sv_input.setMinimumHeight(35)
+        self.temp_setting_form.addRow("CH1 Temp:", self.temp_sv_input)
+
+        # 오토튜닝 ON/OFF (Address: 0x0064) [cite: 869]
+        self.at_exec_combo = QtWidgets.QComboBox()
+        self.at_exec_combo.addItems(["OFF (정지)", "ON (실행)"])
+        self.at_exec_combo.setMinimumHeight(35)
+        self.temp_setting_form.addRow("오토 튜닝:", self.at_exec_combo)
+
+        self.ctrl_vbox.addWidget(self.temp_setting_group)
+        self.ctrl_vbox.addStretch() # 버튼을 아래로 밀어냄
+
+        # 온도 설정/제어 버튼
+        self.temp_set_btn = QtWidgets.QPushButton("온도 설정/제어")
+        self.temp_set_btn.setMinimumHeight(50)
+        self.temp_set_btn.setStyleSheet("""
+            color: black; 
+            font-weight: bold; 
+            font-size: 12pt;
+            border-radius: 5px;
+            border: 1px solid #CCCCCC;
+        """)
+        self.ctrl_vbox.addWidget(self.temp_set_btn)
+        
+        self.temp_main_layout.addWidget(self.temp_ctrl_group)
+
+        # --- [2] 오른쪽 실시간 그래프 패널 (pyqtgraph) ---
+        self.temp_plot = PlotWidget(self.tab_new)
+        self.temp_plot.setBackground('w')
+        self.temp_plot.showGrid(x=True, y=True)
+        self.temp_plot.addLegend()
+        self.temp_plot.setLabel('left', 'Temperature', units='°C')
+        self.temp_plot.setLabel('bottom', 'Time', units='s')
+        self.temp_main_layout.addWidget(self.temp_plot)
+
+        #  탭 추가 코드 (이 코드가 있어야 화면에 나타납니다)
+        self.Main_tabWidget.addTab(self.tab_new, "Temp")
+        # =================================================================
+        # 4. Test 탭 (tab_3)
+        # =================================================================
         self.tab_3 = QtWidgets.QWidget()
         self.tab_3.setObjectName("tab_3")
         self.gridLayout_13 = QtWidgets.QGridLayout(self.tab_3)
@@ -884,8 +1091,6 @@ class Ui_MainWindow(object):
         self.horizontalLayout_24 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_24.setObjectName("horizontalLayout_24")
         self.Com_label_11 = QtWidgets.QLabel(self.layoutWidget1)
-        # self.Com_label_11.setMinimumSize(QtCore.QSize(70, 20)) # [!!] 수정됨
-        # self.Com_label_11.setMaximumSize(QtCore.QSize(70, 20)) # [!!] 수정됨
         self.Com_label_11.setObjectName("Com_label_11")
         self.horizontalLayout_24.addWidget(self.Com_label_11)
         self.torq_set_doubleSpinBox = QtWidgets.QDoubleSpinBox(self.layoutWidget1)
@@ -926,13 +1131,16 @@ class Ui_MainWindow(object):
         self.gridLayout_13.addLayout(self.verticalLayout_24, 0, 0, 1, 1)
         self.Main_tabWidget.addTab(self.tab_3, "")
 
+        # =================================================================
+        # 5. Data 탭 (tab_data)
+        # =================================================================
         self.tab_data = QtWidgets.QWidget()
         self.tab_data.setObjectName("tab_data")
         self.data_tab_layout = QtWidgets.QVBoxLayout(self.tab_data)
         placeholder_label = QtWidgets.QLabel("데이터 탭 콘텐츠가 여기에 표시됩니다.")
         placeholder_label.setAlignment(QtCore.Qt.AlignCenter)
         self.data_tab_layout.addWidget(placeholder_label)
-        self.Main_tabWidget.addTab(self.tab_data, "") # <--- 추가
+        self.Main_tabWidget.addTab(self.tab_data, "")
         
         self.gridLayout.addWidget(self.Main_tabWidget, 0, 0, 1, 1)
         MainWindow.setCentralWidget(self.centralwidget)
@@ -958,12 +1166,22 @@ class Ui_MainWindow(object):
         self.Baud_label.setText(_translate("MainWindow", "Baud-rate"))
         self.Comconnect_pushButton.setText(_translate("MainWindow", "Connect"))
         self.Comdisconnect_pushButton.setText(_translate("MainWindow", "Disconnect"))
+        
         self.COM_groupBox_2.setTitle(_translate("MainWindow", "Load Cell"))
         self.Com_label_2.setText(_translate("MainWindow", "COM port"))
         self.Comrefresh_pushButton_2.setText(_translate("MainWindow", "Refresh"))
         self.Baud_label_2.setText(_translate("MainWindow", "Baud-rate"))
         self.Comconnect_pushButton_2.setText(_translate("MainWindow", "Connect"))
         self.Comdisconnect_pushButton_2.setText(_translate("MainWindow", "Disconnect"))
+        
+        # [NEW] Temp Controller 텍스트
+        self.COM_groupBox_3.setTitle(_translate("MainWindow", "Temp Controller"))
+        self.Com_label_3.setText(_translate("MainWindow", "COM port"))
+        self.Comrefresh_pushButton_3.setText(_translate("MainWindow", "Refresh"))
+        self.Baud_label_3.setText(_translate("MainWindow", "Baud-rate"))
+        self.Comconnect_pushButton_3.setText(_translate("MainWindow", "Connect"))
+        self.Comdisconnect_pushButton_3.setText(_translate("MainWindow", "Disconnect"))
+
         self.Main_tabWidget.setTabText(self.Main_tabWidget.indexOf(self.tab_2), _translate("MainWindow", "COM set"))
         self.Load0_groupBox.setTitle(_translate("MainWindow", "Load to 0 Point Set"))
         self.Load0Currentnow_labeltxt.setText(_translate("MainWindow", "Load Cell Force"))
@@ -977,7 +1195,7 @@ class Ui_MainWindow(object):
         self.Com_label_12.setText(_translate("MainWindow", "Low"))
         self.Com_label_10.setText(_translate("MainWindow", "Force(N)"))
         self.Com_label_13.setText(_translate("MainWindow", "Displacement"))
-        self.Com_label_14.setText(_translate("MainWindow", "Displacement")) # [!!] 이 라벨도 텍스트가 있네요.
+        self.Com_label_14.setText(_translate("MainWindow", "Displacement"))
         self.Motspeed_groupBox.setTitle(_translate("MainWindow", "Motor speed setting"))
         self.MotorSpeed_checkBox.setText(_translate("MainWindow", "사용자 지정"))
         self.MotorSpeedUnit_label.setText(_translate("MainWindow", "[um/sec]"))
@@ -1003,8 +1221,8 @@ class Ui_MainWindow(object):
         self.jog500_radioButton.setText(_translate("MainWindow", "500[um/sec]"))
         self.Setjogspeed_pushButton.setText(_translate("MainWindow", "Set Speed"))
         self.groupBox_10.setTitle(_translate("MainWindow", "Jog"))
-        self.Jogfowerd_pushButton.setText(_translate("MainWindow", "Compression"))
-        self.Jogbackwerd_pushButton.setText(_translate("MainWindow", "Tensile"))
+        self.Jogfowerd_pushButton.setText(_translate("MainWindow", "Jog +"))
+        self.Jogbackwerd_pushButton.setText(_translate("MainWindow", "Jog -"))
 
         self.tension_groupBox.setTitle(_translate("MainWindow", "Pre-Tension"))
         self.tension_speed_spinBox.setSuffix(_translate("MainWindow", " um/sec"))
@@ -1013,6 +1231,8 @@ class Ui_MainWindow(object):
         self.tension_stop_pushButton.setText(_translate("MainWindow", "수동 정지"))
         
         self.Main_tabWidget.setTabText(self.Main_tabWidget.indexOf(self.tab), _translate("MainWindow", "Setting"))
+        self.Main_tabWidget.setTabText(self.Main_tabWidget.indexOf(self.tab_new), _translate("MainWindow", "Temp"))
+
         self.textEdit.setHtml(_translate("MainWindow", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
 "p, li { white-space: pre-wrap; }\n"
@@ -1037,9 +1257,6 @@ class Ui_MainWindow(object):
 
         self.Main_tabWidget.setTabText(self.Main_tabWidget.indexOf(self.tab_data), _translate("MainWindow", "Data"))
         
-from pyqtgraph import PlotWidget
-
-
 if __name__ == "__main__":
     import sys
     app = QtWidgets.QApplication(sys.argv)

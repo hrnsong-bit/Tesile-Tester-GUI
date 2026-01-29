@@ -26,7 +26,7 @@ from GUI import Ui_MainWindow
 from Controller_motor import MotorService
 from Controller_Loadcell import LoadcellService
 from pymodbus.client.serial import ModbusSerialClient
-
+from Manager_temp import TempManager
 from Basic_Test import BasicTest
 from Ui_Binding import bind_main_signals
 from Monitor_motor import MotorMonitor
@@ -34,7 +34,7 @@ from Monitor_loadcell import LoadcellMonitor
 from Plot_Service import PlotService
 
 try:
-    # [수정 1] TabDICUTM 추가 임포트
+    #  TabDICUTM 추가 임포트
     from Data_Repack import TabDICUTM, TabMultiCompare, TabPreprocessor
 except ImportError as e:
     logger.error(f"Data_Repack.py 임포트 실패: {e}. matplotlib, pandas, numpy가 설치되었는지 확인하세요.")
@@ -169,6 +169,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.setupUi(self)
 
         try:
+            self.plot_service = PlotService(
+                self, 
+                self.ui.graphicsView,
+                ui=self.ui,
+                temp_plot_widget=self.ui.temp_plot  # GUI.py에서 생성한 위젯
+            )
+            logger.info("PlotService 초기화 완료")
+        except Exception as e:
+            logger.error(f"PlotService 초기화 실패: {e}")
+            self.plot_service = None
+        
+        self.temp_manager = TempManager(self.ui, plot_service=self.plot_service)
+
+        if hasattr(self.ui, 'temp_set_btn'):
+            self.ui.temp_set_btn.clicked.connect(self.temp_manager.apply_settings)
+
+        try:
             if self.ui.data_tab_layout.count() > 0:
                 item = self.ui.data_tab_layout.takeAt(0)
                 widget = item.widget()
@@ -178,7 +195,7 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
             logger.warning(f"Data 탭 placeholder 제거 실패: {e}")
 
-        # [수정 2] 탭 인스턴스 생성 (SS Curve Generator 복구)
+        # 탭 인스턴스 생성 (SS Curve Generator 복구)
         self.ss_curve_widget = TabDICUTM()          # <-- 복구된 탭
         self.preprocessor_widget = TabPreprocessor()
         self.multi_compare_widget = TabMultiCompare()
@@ -205,6 +222,8 @@ class MainWindow(QtWidgets.QMainWindow):
             logger.error(f"PlotService 초기화 실패: {e}")
             self.plot_service = None # 실패 시 None으로 유지
         
+            
+        
         # ================================================
         # Hz UI 연결 (생성은 GUI.py가 담당)
         # ================================================
@@ -227,6 +246,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.motor_monitor = None     # 모터 모니터
         self.lc_monitor = None        # 로드셀 모니터
         
+        # Temp Controller Client
+        self.temp_client = None 
+
         # 리팩토링: 서비스 클래스 생성
         # 스크류 사양 (lead_mm_per_rev = 0.01 mm/rev)
         self.speed_controller = SpeedController(ui=self.ui, lead_mm_per_rev=0.01)
@@ -278,7 +300,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
             stop_btn.clicked.connect(self.on_basic_test_stop) # 중앙 정지 함수로 연결
 
-        # [!!] ========== 수정됨: Reset 버튼 연결 ==========
+        # ========== 수정됨: Reset 버튼 연결 ==========
         # Reset 버튼을 우리가 만든 on_reset_clicked 함수에 연결합니다.
         reset_btn = getattr(self.ui, "Basictestreset_pushButton", None)
         if reset_btn:
@@ -288,7 +310,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
             reset_btn.clicked.connect(self.on_reset_clicked) # 새 함수 연결
 
-        # [!!] ========== Pretension 버튼 연결 ==========
+        # ========== Pretension 버튼 연결 ==========
         if hasattr(self.ui, "tension_start_pushButton"):
             self.ui.tension_start_pushButton.clicked.connect(self.on_pretension_start)
         if hasattr(self.ui, "tension_stop_pushButton"):
@@ -389,6 +411,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.Comconnect_pushButton_2.setEnabled(True)
         if hasattr(self.ui, "Comdisconnect_pushButton_2"):
             self.ui.Comdisconnect_pushButton_2.setEnabled(False)
+        # [NEW] Temp Controller
+        if hasattr(self.ui, "Comconnect_pushButton_3"):
+            self.ui.Comconnect_pushButton_3.setEnabled(True)
+        if hasattr(self.ui, "Comdisconnect_pushButton_3"):
+            self.ui.Comdisconnect_pushButton_3.setEnabled(False)
 
     # ========================
     # 콤보를 '편집 가능 + 읽기 전용'으로 만들어 빈 선택(해제) 지원
@@ -417,9 +444,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.Baud_comboBox_2.addItems(["9600", "19200", "38400", "57600", "115200"])
             self.ui.Baud_comboBox_2.setCurrentText("9600")
 
+        # [NEW] Temp Controller Baud (기본 9600)
+        if hasattr(self.ui, "Baud_comboBox_3"):
+            self.ui.Baud_comboBox_3.clear()
+            self.ui.Baud_comboBox_3.addItems(["9600", "19200", "38400", "57600", "115200"])
+            self.ui.Baud_comboBox_3.setCurrentText("9600") # TM4 출하사양 
+
         # 콤보를 '빈 선택' 가능하도록 준비
         self._prepare_combo_for_placeholder(getattr(self.ui, "Com_comboBox", None))
         self._prepare_combo_for_placeholder(getattr(self.ui, "Com_comboBox_2", None))
+        self._prepare_combo_for_placeholder(getattr(self.ui, "Com_comboBox_3", None)) # [NEW]
 
         # 포트 스캔해서 콤보 채우기 (없으면 공란 유지)
         self.refresh_com_ports()
@@ -436,8 +470,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.ui, "Comdisconnect_pushButton_2"):
             self.ui.Comdisconnect_pushButton_2.clicked.connect(self.on_com_disconnect_lc)
 
-        # Refresh 버튼(들) → 두 콤보 모두 갱신
-        for name in ("Comrefresh_pushButton", "Comrefresh_pushButton_2"):
+        # [NEW] 버튼 시그널 (Temp Controller)
+        if hasattr(self.ui, "Comconnect_pushButton_3"):
+            self.ui.Comconnect_pushButton_3.clicked.connect(self.on_com_connect_temp)
+        if hasattr(self.ui, "Comdisconnect_pushButton_3"):
+            self.ui.Comdisconnect_pushButton_3.clicked.connect(self.on_com_disconnect_temp)
+
+        # Refresh 버튼(들) → 모든 콤보 갱신
+        for name in ("Comrefresh_pushButton", "Comrefresh_pushButton_2", "Comrefresh_pushButton_3"):
             btn = getattr(self.ui, name, None)
             if btn:
                 btn.clicked.connect(lambda _=False, n=name: self.on_com_refresh_clicked(n))
@@ -468,8 +508,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         motor_combo = getattr(self.ui, "Com_comboBox", None)
         loadcell_combo = getattr(self.ui, "Com_comboBox_2", None)
+        temp_combo = getattr(self.ui, "Com_comboBox_3", None) # [NEW]
         _fill(motor_combo, "Motor")
         _fill(loadcell_combo, "LoadCell")
+        _fill(temp_combo, "Temp") # [NEW]
 
     def on_com_refresh_clicked(self, source_name="Comrefresh_pushButton"):
         btn = getattr(self.ui, source_name, None)
@@ -508,11 +550,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
         ok, err = False, None
         try:
-            # 2. 연결 시도
-            ok = self.motor_client.connect()
+            # 2. 물리적 연결 시도
+            if self.motor_client.connect():
+                #  ========== Handshake (데이터 읽기 시도) ==========
+                logger.info("[MOTOR] Handshake 시도: 현재 위치(Address 117) 요청...")
+                
+                chk = self.motor_client.read_holding_registers(address=117, count=2, slave=1)
+                
+                if chk.isError():
+                    ok = False
+                    err = f"Modbus Error: {chk}"
+                    logger.error(f"[MOTOR] Handshake 실패 (Modbus Error): {chk}")
+                    self.motor_client.close() # 실패 시 닫기
+                else:
+                    # 데이터가 정상적으로 오면 성공
+                    ok = True
+                    logger.info(f"[MOTOR] Handshake 성공. Registers: {chk.registers}")
+            else:
+                ok = False
+
         except Exception as e:
             err = e
             ok = False
+            if self.motor_client:
+                self.motor_client.close()
 
         logger.info(f"[MOTOR] Connect → {port_text} @ {baud} : {ok}")
 
@@ -523,7 +584,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.speed_controller.set_motor(self.motor)
             self.basic_test = BasicTest(self.motor, self.speed_controller.get_run_speed)
 
-            # [!!] Pretension 객체 생성 (모터, 로드셀, 데이터핸들러 주입)
+            #  Pretension 객체 생성 (모터, 로드셀, 데이터핸들러 주입)
             if PretensionTest:
                 self.pretension_test = PretensionTest(
                     motor_service=self.motor,
@@ -578,17 +639,17 @@ class MainWindow(QtWidgets.QMainWindow):
         # 3. 서비스 및 테스트 객체 해제
         self.motor = None
         self.basic_test = None
+        self.pretension_test = None
         self.speed_controller.set_motor(None)
 
         # 4. 클라이언트 연결 해제
-        try:
-            if self.motor_client:
-                self.motor_client.close()
-        except Exception as e:
-                logger.error(f"[MOTOR] close 예외: {e}")
-        
-        # 5. 클라이언트 객체 해제
-        self.motor_client = None 
+        if self.motor_client:
+            try:
+               self.motor_client.close()
+            except Exception as e:
+                logger.error(f"클라이언트 종료 실패: {e}")
+            finally:
+                self.motor_client = None
 
         # 라벨 초기화 (DataHandler에 위임)
         self.data_handler.reset_ui_labels()
@@ -694,6 +755,102 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.Comconnect_pushButton_2.setEnabled(True)
         if hasattr(self.ui, "Comdisconnect_pushButton_2"):
             self.ui.Comdisconnect_pushButton_2.setEnabled(False)
+
+    # =========================================================
+    #  Temp Controller Connect / Disconnect
+    # =========================================================
+    def on_com_connect_temp(self):
+        """온도 제어기 연결 및 매니저 서비스 시작"""
+        # 1. 포트 및 보드레이트 정보 가져오기
+        c3 = getattr(self.ui, "Com_comboBox_3", QtWidgets.QComboBox())
+        port_text = (c3.currentText() or "").strip()
+        
+        if not port_text:
+            self.refresh_com_ports()
+            QtWidgets.QMessageBox.information(self, "포트 선택 필요", "포트를 선택하거나 장치를 연결하세요.")
+            return
+
+        try:
+            baud_cb = getattr(self.ui, "Baud_comboBox_3", None)
+            baud = int(baud_cb.currentText() or "9600") if baud_cb else 9600
+        except ValueError:
+            baud = 9600
+
+        # 2. Modbus 클라이언트 객체 생성
+        from pymodbus.client.serial import ModbusSerialClient
+        self.temp_client = ModbusSerialClient(
+            port=port_text, 
+            baudrate=baud, 
+            bytesize=8, 
+            parity='N', 
+            stopbits=1, 
+            timeout=1.0
+        )
+
+        ok, err = False, None
+
+        try:
+            # 3. 물리적 연결 시도
+            if self.temp_client.connect():
+                logger.info(f"[TEMP] 연결 시도 중... (Port: {port_text})")
+                
+                # Handshake: CH1의 PV(현재온도) 주소인 0x03E8을 읽어 통신 확인
+                chk = self.temp_client.read_input_registers(address=0x0066, count=1)
+                
+                if chk.isError():
+                    ok = False
+                    err = f"Modbus 응답 에러: {chk}"
+                    logger.error(f"[TEMP] Handshake 실패: {err}")
+                    self.temp_client.close()
+                else:
+                    ok = True
+                    logger.info(f"[TEMP] Handshake 성공. 데이터: {chk.registers}")
+            else:
+                ok = False
+                err = "포트를 열 수 없습니다. (다른 프로그램에서 사용 중인지 확인하세요)"
+
+        except Exception as e:
+            ok = False
+            err = str(e)
+            if self.temp_client:
+                self.temp_client.close()
+
+        # 4. 최종 연결 결과 처리
+        if ok:
+            # --- 계층 구조에 따른 서비스 시작 ---
+            if hasattr(self, 'temp_manager'):
+                # Manager_temp를 통해 컨트롤러/모니터링 스레드 일괄 시작
+                self.temp_manager.start_service(self.temp_client, 1000) # 1000ms 주기
+            
+            logger.info(f"[TEMP] 연결 성공: {port_text}")
+            QtWidgets.QMessageBox.information(self, "연결 성공", f"온도 제어기 연결 성공: {port_text}")
+            
+            if hasattr(self.ui, "Comdisconnect_pushButton_3"):
+                self.ui.Comdisconnect_pushButton_3.setEnabled(True)
+            if hasattr(self.ui, "Comconnect_pushButton_3"):
+                self.ui.Comconnect_pushButton_3.setEnabled(False)
+        else:
+            logger.error(f"[TEMP] 연결 실패: {err}")
+            QtWidgets.QMessageBox.warning(self, "연결 실패", f"온도 제어기 연결 실패:\n{err}")
+            self.temp_client = None
+
+    def on_com_disconnect_temp(self):
+        # 1. 클라이언트 연결 해제
+        try:
+            if self.temp_client:
+                self.temp_client.close()
+        except Exception as e:
+                logger.error(f"[TEMP] close 예외: {e}")
+        
+        # 2. 클라이언트 객체 해제
+        self.temp_manager.stop_service()
+
+        logger.info("온도 제어기 연결을 해제했습니다.")
+        QtWidgets.QMessageBox.information(self, "연결 해제", "온도 제어기 연결을 해제했습니다.")
+        if hasattr(self.ui, "Comconnect_pushButton_3"):
+            self.ui.Comconnect_pushButton_3.setEnabled(True)
+        if hasattr(self.ui, "Comdisconnect_pushButton_3"):
+            self.ui.Comdisconnect_pushButton_3.setEnabled(False)
 
 
 if __name__ == "__main__":

@@ -65,7 +65,7 @@ def safe_read_csv(path, **kw):
     except UnicodeDecodeError:
         return pd.read_csv(path, encoding="cp949", **kw)
 
-# [유지] 항복 강도 계산 (0.2% Offset Method)
+#  항복 강도 계산 (0.2% Offset Method)
 def calculate_yield_strength(strain, stress, offset_percent=0.2):
     """
     0.2% 오프셋 방법을 사용하여 항복강도를 계산
@@ -1132,10 +1132,11 @@ class TabMultiCompare(QWidget):
         fig = self.canvas.figure; fig.clear()
         ax = fig.add_subplot(111)
 
-        # [New] 항복점 계산 여부 확인
+        #  항복점 계산 여부 확인
         calc_yield = self.chk_yield.isChecked()
 
         for idx, p in enumerate(self.pairs):
+            udf = pd.read_csv(utm_path, chunksize=10000)
             utm_path, dic_path, tol = p["utm"], p["dic"], float(p["tol"])
             label = p["label"]
             try:
