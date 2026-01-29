@@ -168,22 +168,35 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
+        # PlotService 초기화
         try:
             self.plot_service = PlotService(
                 self, 
                 self.ui.graphicsView,
                 ui=self.ui,
-                temp_plot_widget=self.ui.temp_plot  # GUI.py에서 생성한 위젯
+                temp_plot_widget=self.ui.temp_plot
             )
             logger.info("PlotService 초기화 완료")
         except Exception as e:
             logger.error(f"PlotService 초기화 실패: {e}")
             self.plot_service = None
         
+        # TempManager 초기화
         self.temp_manager = TempManager(self.ui, plot_service=self.plot_service)
+        logger.info("=" * 60)
+        logger.info("[Main.__init__] 온도 설정 버튼 연결 시도")
 
+        # ===== 온도 설정 버튼 연결 =====
         if hasattr(self.ui, 'temp_set_btn'):
-            self.ui.temp_set_btn.clicked.connect(self.temp_manager.apply_settings)
+            try:
+                # 기존 연결 제거
+                self.ui.temp_set_btn.clicked.disconnect()
+            except:
+                pass
+            self.ui.temp_set_btn.clicked.connect(self.on_temp_settings_apply)
+            logger.info("✓ 온도 설정 버튼 연결 완료")
+        else:
+            logger.error("✗ temp_set_btn 위젯을 찾을 수 없습니다.")
 
         try:
             if self.ui.data_tab_layout.count() > 0:
@@ -196,7 +209,7 @@ class MainWindow(QtWidgets.QMainWindow):
             logger.warning(f"Data 탭 placeholder 제거 실패: {e}")
 
         # 탭 인스턴스 생성 (SS Curve Generator 복구)
-        self.ss_curve_widget = TabDICUTM()          # <-- 복구된 탭
+        self.ss_curve_widget = TabDICUTM()
         self.preprocessor_widget = TabPreprocessor()
         self.multi_compare_widget = TabMultiCompare()
 
@@ -759,6 +772,34 @@ class MainWindow(QtWidgets.QMainWindow):
     # =========================================================
     #  Temp Controller Connect / Disconnect
     # =========================================================
+    def on_temp_settings_apply(self):
+        """
+        온도 설정/제어 버튼 클릭 시 호출
+        """
+        logger.info("=" * 80)
+        logger.info("[Main] 온도 설정 버튼 클릭됨")
+        logger.info("=" * 80)
+        try:
+            # TempManager를 통해 설정 적용
+            if self.temp_manager:
+                logger.info("[Main] TempManager.apply_settings() 호출 시작")
+                self.temp_manager.apply_settings()
+                logger.info("[Main] TempManager.apply_settings() 호출 완료")
+            else:
+                logger.error("[Main] TempManager가 None입니다.")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "오류",
+                    "TempManager가 초기화되지 않았습니다."
+            )
+        except Exception as e:
+            logger.error(f"[Main] 설정 적용 실패: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "오류",
+                f"설정 적용 중 오류 발생:\n{e}"
+        )
+    
     def on_com_connect_temp(self):
         """온도 제어기 연결 및 매니저 서비스 시작"""
         # 1. 포트 및 보드레이트 정보 가져오기
@@ -842,11 +883,12 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
                 logger.error(f"[TEMP] close 예외: {e}")
         
-        # 2. 클라이언트 객체 해제
+        self.temp_client = None
         self.temp_manager.stop_service()
 
         logger.info("온도 제어기 연결을 해제했습니다.")
         QtWidgets.QMessageBox.information(self, "연결 해제", "온도 제어기 연결을 해제했습니다.")
+
         if hasattr(self.ui, "Comconnect_pushButton_3"):
             self.ui.Comconnect_pushButton_3.setEnabled(True)
         if hasattr(self.ui, "Comdisconnect_pushButton_3"):

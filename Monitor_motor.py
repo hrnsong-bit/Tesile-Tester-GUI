@@ -33,10 +33,10 @@ class MotorWorker(QtCore.QObject):
         self.loop_timer.timeout.connect(self._do_work)
         self.loop_timer.start()
     
-def _do_work(self):
-    if not self._running:
-        self.loop_timer.stop()
-        return
+    def _do_work(self):
+        if not self._running:
+            self.loop_timer.stop()
+            return
         
         while self._running:
             loop_start_time = time.time()

@@ -910,19 +910,19 @@ class Ui_MainWindow(object):
         self.ctrl_vbox.addWidget(line)
         self.ctrl_vbox.addSpacing(10)
 
-        # --- [요청 기능] CH1 SV 입력 및 오토튜닝 ON/OFF ---
+        # --- CH1 SV 입력 및 오토튜닝 ON/OFF ---
         self.temp_setting_group = QtWidgets.QGroupBox("Control Settings")
         self.temp_setting_form = QtWidgets.QFormLayout(self.temp_setting_group)
 
-        # CH1 SV 입력 (Address: 0x0000) [cite: 866]
+        # CH1 SV 입력 (Address: 0x0000)
         self.temp_sv_input = QtWidgets.QDoubleSpinBox()
-        self.temp_sv_input.setRange(-200.0, 500.0) # TM4 입력 범위 [cite: 876]
+        self.temp_sv_input.setRange(0, 500) # TM4 입력 범위 [cite: 876]
         self.temp_sv_input.setDecimals(1)
         self.temp_sv_input.setSuffix(" °C")
         self.temp_sv_input.setMinimumHeight(35)
         self.temp_setting_form.addRow("CH1 Temp:", self.temp_sv_input)
 
-        # 오토튜닝 ON/OFF (Address: 0x0064) [cite: 869]
+        # 오토튜닝 ON/OFF (Address: 0x0064)
         self.at_exec_combo = QtWidgets.QComboBox()
         self.at_exec_combo.addItems(["OFF (정지)", "ON (실행)"])
         self.at_exec_combo.setMinimumHeight(35)
