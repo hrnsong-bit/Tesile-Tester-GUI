@@ -357,78 +357,77 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         """프로그램 종료 시 설정 저장 및 모든 서비스 정리"""
         try:
-            # ===== 1. 온도 제어 정지 (하드웨어) =====
-            logger.info("[CLOSE] 프로그램 종료 - 온도 제어 정지 시작")
+            logger.info("[CLOSE] 프로그램 종료 시작")
+            
+            # 1. 온도 제어 정지
             self._stop_temp_control_safely()
         
-            # ===== 2. 약간의 대기 (Modbus 명령 완료) =====
-            QtCore.QThread.msleep(200)
+            # ===== 수정: 매직 넘버 → config =====
+            QtCore.QThread.msleep(temp_cfg.DISCONNECT_DELAY_MS)  # ← 200 대신
         
-            # ===== 3. 모든 Manager 서비스 중지 (스레드 종료) =====
-            logger.info("[CLOSE] 모든 서비스 중지 시작")
+            # 2. 모든 Manager 서비스 중지
+            logger.info("[CLOSE] 모든 서비스 중지")
         
             if hasattr(self, 'temp_manager') and self.temp_manager:
                 try:
-                   self.temp_manager.stop_service()  # ← 추가!
-                   logger.info("[CLOSE] ✓ TempManager 서비스 중지 완료")
+                   self.temp_manager.stop_service()
+                   logger.info("[CLOSE] ✓ TempManager 중지")
                 except Exception as e:
                     logger.error(f"[CLOSE] TempManager 중지 실패: {e}")
         
             if hasattr(self, 'motor_manager') and self.motor_manager:
                 try:
                     self.motor_manager.stop_service()
-                    logger.info("[CLOSE] ✓ MotorManager 서비스 중지 완료")
+                    logger.info("[CLOSE] ✓ MotorManager 중지")
                 except Exception as e:
                     logger.error(f"[CLOSE] MotorManager 중지 실패: {e}")
         
             if hasattr(self, 'loadcell_manager') and self.loadcell_manager:
                 try:
                     self.loadcell_manager.stop_service()
-                    logger.info("[CLOSE] ✓ LoadcellManager 서비스 중지 완료")
+                    logger.info("[CLOSE] ✓ LoadcellManager 중지")
                 except Exception as e:
                     logger.error(f"[CLOSE] LoadcellManager 중지 실패: {e}")
         
-            # ===== 4. Modbus 클라이언트 종료 =====
+            # 3. Modbus 클라이언트 종료
             if hasattr(self, 'temp_client') and self.temp_client:
                 try:
                     self.temp_client.close()
-                    logger.info("[CLOSE] ✓ Temp Modbus 클라이언트 종료 완료")
+                    logger.info("[CLOSE] ✓ Temp 클라이언트 종료")
                 except Exception as e:
                     logger.error(f"[CLOSE] Temp 클라이언트 종료 실패: {e}")
         
             if hasattr(self, 'motor_client') and self.motor_client:
                 try:
                     self.motor_client.close()
-                    logger.info("[CLOSE] ✓ Motor Modbus 클라이언트 종료 완료")
+                    logger.info("[CLOSE] ✓ Motor 클라이언트 종료")
                 except Exception as e:
                     logger.error(f"[CLOSE] Motor 클라이언트 종료 실패: {e}")
         
-            # ===== 5. 설정 저장 =====
+            # 4. 설정 저장
             try:
                 self.settings_mgr.save_window_geometry(self.saveGeometry())
                 self.settings_mgr.save_window_state(self.saveState())
-            
                 self.settings_mgr.save_displacement_limit(
                     self.ui.DisplaceLimitMax_doubleSpinBox.value()
                 )
                 self.settings_mgr.save_force_limit(
                     self.ui.ForceLimitMax_doubleSpinBox.value()
                 )
-            
                 self.settings_mgr.sync()
                 logger.info("[CLOSE] ✓ 설정 저장 완료")
             except Exception as e:
                 logger.error(f"[CLOSE] 설정 저장 실패: {e}")
         
-            # ===== 6. 스레드 종료 대기 =====
-            QtCore.QThread.msleep(300)
+            # ===== 수정: 매직 넘버 → config =====
+            QtCore.QThread.msleep(monitor_cfg.THREAD_SLEEP_BEFORE_QUIT_MS * 3)  # ← 300 대신
         
-            logger.info("[CLOSE] ==================== 프로그램 종료 완료 ====================")
+            logger.info("[CLOSE] ==================== 종료 완료 ====================")
         
         except Exception as e:
             logger.error(f"[CLOSE] closeEvent 예외: {e}", exc_info=True)
     
-            event.accept()
+        event.accept()
 
     def _stop_temp_control_safely(self):
         """
@@ -1181,12 +1180,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_com_disconnect_temp(self):
         """온도 제어기 연결 해제 (제어 정지 포함)"""
         
-        # ===== 추가: 제어 정지 =====
+        # ===== 제어 정지 =====
         logger.info("[TEMP_DISCONNECT] 연결 해제 전 제어 정지")
         self._stop_temp_control_safely()
         
         # 약간의 대기 시간 (Modbus 명령 완료 대기)
-        QtCore.QTimer.singleShot(200, self._finalize_temp_disconnect)
+        QtCore.QTimer.singleShot(
+        temp_cfg.DISCONNECT_DELAY_MS,  # ← 200 대신
+        self._finalize_temp_disconnect
+        )
     
     def _finalize_temp_disconnect(self):
         """온도 제어기 연결 해제 완료"""

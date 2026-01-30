@@ -1,8 +1,7 @@
-# Monitor_temp.py
-
 import logging
 from PyQt5 import QtCore
 from pymodbus.client.serial import ModbusSerialClient
+from config import temp_cfg, monitor_cfg  # ===== 추가 =====
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +17,15 @@ class TempWorker(QtCore.QObject):
         super().__init__()
         self.client = client
         self.interval_ms = interval_ms
-        self.addr_list = [0x03E8, 0x03EE, 0x03F4, 0x03FA]
         
-        # 타이머는 run()에서 생성
+        # ===== 수정: 매직 넘버 → config =====
+        self.addr_list = [
+            temp_cfg.CHANNEL_ADDRESSES[1]["PV"],  # ← 0x03E8 대신
+            temp_cfg.CHANNEL_ADDRESSES[2]["PV"],  # ← 0x03EE 대신
+            temp_cfg.CHANNEL_ADDRESSES[3]["PV"],  # ← 0x03F4 대신
+            temp_cfg.CHANNEL_ADDRESSES[4]["PV"]   # ← 0x03FA 대신
+        ]
+        
         self.timer = None
         
         logger.info(f"TempWorker 생성됨 (주기: {interval_ms} ms)")
@@ -33,10 +38,10 @@ class TempWorker(QtCore.QObject):
         self.timer.timeout.connect(self._do_work)
         
         self.timer.start()
-        logger.info(f"Temp 모니터링 타이머 시작 (스레드 ID: {int(QtCore.QThread.currentThreadId())})")
+        logger.info(f"Temp 모니터링 타이머 시작")
 
     def _do_work(self):
-        """타이머 콜백 - 매 interval마다 호출됨"""
+        """타이머 콜백"""
         if not self.client or not self.client.is_socket_open():
             logger.debug("Temp 클라이언트 연결 없음 (스킵)")
             return
@@ -47,7 +52,7 @@ class TempWorker(QtCore.QObject):
                 res = self.client.read_input_registers(
                     address=addr, 
                     count=1,
-                    device_id=1
+                    device_id=temp_cfg.DEFAULT_UNIT_ID  # ← 1 대신
                 )
                 if not res.isError():
                     val = res.registers[0]
@@ -55,7 +60,6 @@ class TempWorker(QtCore.QObject):
                 else:
                     current_temps.append(None)
             
-            # 메인 스레드로 데이터 전송
             self.temp_ready.emit(current_temps)
         
         except Exception as e:
@@ -120,7 +124,7 @@ class TempMonitor(QtCore.QObject):
         # 스레드 시작
         self.thread.start()
 
-        logger.info(f"TempMonitor 시작됨 (메인 스레드 ID: {int(QtCore.QThread.currentThreadId())})")
+        logger.info(f"TempMonitor 시작됨")
 
     def stop(self):
         """스레드를 안전하게 종료"""
@@ -129,10 +133,14 @@ class TempMonitor(QtCore.QObject):
                 logger.info("TempMonitor: 스레드 종료 중...")
                 
                 self.stop_worker.emit()
-                QtCore.QThread.msleep(100)
+                
+                # ===== 수정: 매직 넘버 → config =====
+                QtCore.QThread.msleep(monitor_cfg.THREAD_SLEEP_BEFORE_QUIT_MS)  # ← 100 대신
+                
                 self.thread.quit()
                 
-                if not self.thread.wait(2000):
+                # ===== 수정: 매직 넘버 → config =====
+                if not self.thread.wait(monitor_cfg.THREAD_WAIT_TIMEOUT_MS):  # ← 2000 대신
                     logger.warning("Temp 스레드가 정상 종료되지 않았습니다. 강제 종료합니다.")
                     self.thread.terminate()
                     self.thread.wait()

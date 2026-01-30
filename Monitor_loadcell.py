@@ -1,16 +1,13 @@
-﻿# Monitor_loadcell.py
-
-import time
+﻿import time
 import serial
-import re
 import logging
 from PyQt5 import QtCore
-
-from config import loadcell_cfg
+from config import loadcell_cfg, monitor_cfg  # ===== 추가 =====
 
 logger = logging.getLogger(__name__)
 
 _FULLSCALE = loadcell_cfg.FULLSCALE
+
 
 def _hex_dump(data: bytes, maxlen=256):
     s = " ".join(f"{b:02X}" for b in data[:maxlen])
@@ -18,12 +15,14 @@ def _hex_dump(data: bytes, maxlen=256):
         s += f" …(+{len(data)-maxlen}B)"
     return s
 
+
 def _to_s32_be(b4: bytes) -> int:
     """빅엔디언 4바이트 → 부호 있는 32비트 정수"""
     if len(b4) != 4:
         return 0
     u = (b4[0] << 24) | (b4[1] << 16) | (b4[2] << 8) | b4[3]
     return u - 0x100000000 if (u & 0x80000000) else u
+
 
 def _read_until_crlf(ser, max_wait=1.5, idle_gap=0.10) -> bytes:
     """CRLF(0x0D0A)까지 읽기"""
@@ -45,6 +44,7 @@ def _read_until_crlf(ser, max_wait=1.5, idle_gap=0.10) -> bytes:
                 time.sleep(0.01)
     return bytes(buf)
 
+
 def _msv_once_via_serial(ser: serial.Serial) -> tuple[bool, int, bytes]:
     """시리얼 포트를 통해 단일 측정(MSV) 수행"""
     if not ser or not ser.is_open:
@@ -54,13 +54,23 @@ def _msv_once_via_serial(ser: serial.Serial) -> tuple[bool, int, bytes]:
     try:
         ser.reset_input_buffer()
         
-        # 주소 선택
-        ser.write(b";S21;")
+        # ===== 수정: 매직 넘버 → config =====
+        # 주소 선택 명령 생성
+        addr_cmd = loadcell_cfg.CMD_SELECT_ADDRESS.format(
+            address=loadcell_cfg.DEVICE_ADDRESS
+        )
+        frame = f"{loadcell_cfg.FRAME_START}{addr_cmd}{loadcell_cfg.FRAME_END}"
+        ser.write(frame.encode('ascii'))  # ;S21; 대신
         ser.flush()
         time.sleep(0.02)
 
         # 단일 측정 명령
-        ser.write(b";MSV?;")
+        measure_frame = (
+            f"{loadcell_cfg.FRAME_START}"
+            f"{loadcell_cfg.CMD_SINGLE_MEASURE}"
+            f"{loadcell_cfg.FRAME_END}"
+        )
+        ser.write(measure_frame.encode('ascii'))  # ;MSV?; 대신
         ser.flush()
 
         raw = _read_until_crlf(ser)
@@ -78,9 +88,6 @@ def _msv_once_via_serial(ser: serial.Serial) -> tuple[bool, int, bytes]:
         return (False, 0, b"")
 
 
-# ===================================================================
-# 1. Worker (QTimer를 run() 내에서 생성)
-# ===================================================================
 class LoadcellWorker(QtCore.QObject):
     """
     QTimer 기반 로드셀 모니터링 워커
@@ -92,28 +99,22 @@ class LoadcellWorker(QtCore.QObject):
         super().__init__()
         self.ser = ser
         self.interval_ms = interval_ms
-        
-        # ✓ 수정: __init__에서 QTimer 생성 안 함
         self.timer = None
         
         logger.info(f"LoadcellWorker 생성됨 (주기: {interval_ms} ms)")
 
     @QtCore.pyqtSlot()
     def run(self):
-        """
-        워커 스레드 시작 시 호출
-        QTimer를 여기서 생성 (현재 스레드에서)
-        """
-        # ✓ 핵심: QTimer를 워커 스레드 내에서 생성
+        """워커 스레드 시작 시 호출"""
         self.timer = QtCore.QTimer()
         self.timer.setInterval(self.interval_ms)
         self.timer.timeout.connect(self._do_work)
         self.timer.start()
         
-        logger.info(f"Loadcell 모니터링 타이머 시작 (스레드 ID: {int(QtCore.QThread.currentThreadId())})")
+        logger.info(f"Loadcell 모니터링 타이머 시작")
 
     def _do_work(self):
-        """타이머 콜백 - 매 interval마다 호출됨"""
+        """타이머 콜백"""
         try:
             if not self.ser or not self.ser.is_open:
                 logger.debug("Serial 포트 연결 없음 (스킵)")
@@ -124,10 +125,14 @@ class LoadcellWorker(QtCore.QObject):
                 logger.debug("MSV 읽기 실패 (skip)")
                 return
 
+            # ===== 수정: 매직 넘버 → config =====
             normalized = counts / float(_FULLSCALE)
-            norm_x100k = normalized * 100000.0 * -0.0098
+            norm_x100k = (
+                normalized * 
+                loadcell_cfg.NORMALIZATION_FACTOR *  # ← 100000.0 대신
+                loadcell_cfg.GRAVITY_FACTOR          # ← -0.0098 대신
+            )
             
-            # 메인 스레드로 데이터 전송
             self.data_ready.emit(norm_x100k)
 
         except Exception as e:
@@ -161,9 +166,6 @@ class LoadcellWorker(QtCore.QObject):
         logger.info(f"Loadcell 모니터링 주기 변경: {interval_ms} ms")
 
 
-# ===================================================================
-# 2. Monitor (컨트롤러) - 변경 없음
-# ===================================================================
 class LoadcellMonitor(QtCore.QObject):
     """
     LoadcellWorker를 별도의 QThread에서 실행하고 제어
@@ -183,7 +185,7 @@ class LoadcellMonitor(QtCore.QObject):
         self.worker.moveToThread(self.thread)
 
         # 시그널 연결
-        self.thread.started.connect(self.worker.run)  # ← 스레드 시작 시 run() 호출
+        self.thread.started.connect(self.worker.run)
         self.stop_worker.connect(self.worker.stop)
         self.interval_changed.connect(self.worker.set_interval)
         self.worker.data_ready.connect(update_callback)
@@ -195,7 +197,7 @@ class LoadcellMonitor(QtCore.QObject):
         # 스레드 시작
         self.thread.start()
 
-        logger.info(f"LoadcellMonitor 시작됨 (메인 스레드 ID: {int(QtCore.QThread.currentThreadId())})")
+        logger.info(f"LoadcellMonitor 시작됨")
 
     def stop(self):
         """스레드를 안전하게 종료"""
@@ -203,17 +205,17 @@ class LoadcellMonitor(QtCore.QObject):
             if hasattr(self, 'thread') and self.thread.isRunning():
                 logger.info("LoadcellMonitor: 스레드 종료 중...")
                 
-                # 1. 워커의 타이머 정지 (시그널로 전달)
+                # 1. 워커의 타이머 정지
                 self.stop_worker.emit()
                 
-                # 2. 약간의 대기 시간
-                QtCore.QThread.msleep(100)
+                # ===== 수정: 매직 넘버 → config =====
+                QtCore.QThread.msleep(monitor_cfg.THREAD_SLEEP_BEFORE_QUIT_MS)  # ← 100 대신
                 
-                # 3. 스레드의 이벤트 루프 종료
+                # 2. 스레드의 이벤트 루프 종료
                 self.thread.quit()
                 
-                # 4. 최대 2초 대기
-                if not self.thread.wait(2000):
+                # ===== 수정: 매직 넘버 → config =====
+                if not self.thread.wait(monitor_cfg.THREAD_WAIT_TIMEOUT_MS):  # ← 2000 대신
                     logger.warning("Loadcell 스레드가 정상 종료되지 않았습니다. 강제 종료합니다.")
                     self.thread.terminate()
                     self.thread.wait()

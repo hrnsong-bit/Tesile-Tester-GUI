@@ -34,8 +34,8 @@ class SpeedController:
 
     def umsec_to_rps(self, um_per_sec: float) -> float:
         """μm/s → rps 변환"""
-        mm_per_sec = um_per_sec / 1000.0
-        return mm_per_sec / max(self.lead_mm_per_rev, 1e-9)
+        mm_per_sec = um_per_sec / motor_cfg.UM_PER_MM
+        return mm_per_sec / max(self.lead_mm_per_rev, motor_cfg.LEAD_MIN_EPSILON)
 
     def toggle_jog_mode(self, state):
         is_checked = state == QtCore.Qt.Checked

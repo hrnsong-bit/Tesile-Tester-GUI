@@ -1,4 +1,3 @@
-# Data_Synchronizer.py
 """
 데이터 동기화 담당
 타임스탬프 기반으로 Motor와 Loadcell 데이터 매칭
@@ -8,6 +7,7 @@ import time
 import logging
 from collections import deque
 from interfaces import IDataSynchronizer
+from config import sync_cfg  # ===== 추가 =====
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,11 @@ class DataSynchronizer(IDataSynchronizer):
     - 하중 측정 시점에 가장 가까운 위치 찾기
     """
     
-    def __init__(self, buffer_size: int = 100):
+    def __init__(self, buffer_size: int = None):  # ===== 수정: 기본값 None =====
+        # ===== 개선: config에서 버퍼 크기 로드 =====
+        if buffer_size is None:
+            buffer_size = sync_cfg.BUFFER_SIZE
+        
         self.pos_buffer = deque(maxlen=buffer_size)    # (timestamp, position_um)
         self.force_buffer = deque(maxlen=buffer_size)  # (timestamp, force_n)
         logger.info(f"DataSynchronizer 초기화 (버퍼 크기: {buffer_size})")
@@ -58,8 +62,12 @@ class DataSynchronizer(IDataSynchronizer):
         
         time_diff_ms = abs(matched[0] - force_timestamp) * 1000
         
-        if time_diff_ms > 50:  # 50ms 이상 차이나면 경고
-            logger.warning(f"동기화 정확도 낮음: {time_diff_ms:.1f}ms")
+        # ===== 개선: config에서 허용 오차 로드 =====
+        if time_diff_ms > sync_cfg.MAX_TIME_DIFF_MS:
+            logger.warning(
+                f"동기화 정확도 낮음: {time_diff_ms:.1f}ms "
+                f"(허용: {sync_cfg.MAX_TIME_DIFF_MS}ms)"
+            )
         else:
             logger.debug(f"동기화 성공: 시간차 {time_diff_ms:.1f}ms")
         

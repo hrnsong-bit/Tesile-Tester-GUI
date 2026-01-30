@@ -1,15 +1,15 @@
-﻿# Monitor_motor.py
-import time
+﻿import time
 import logging
 from PyQt5 import QtCore
 from pymodbus.client.serial import ModbusSerialClient
+from config import motor_cfg, monitor_cfg  # ===== 추가 =====
 
 logger = logging.getLogger(__name__)
+
 
 class MotorWorker(QtCore.QObject):
     """
     QTimer 기반 모터 모니터링 워커
-    무한 루프 대신 타이머를 사용하여 정확한 주기 제어
     """
     
     data_ready = QtCore.pyqtSignal(float)
@@ -40,9 +40,9 @@ class MotorWorker(QtCore.QObject):
                 logger.debug("클라이언트 연결 없음 (스킵)")
                 return
 
-            # Modbus 읽기
+            # ===== 수정: 매직 넘버 → config =====
             result_pos = self.client.read_holding_registers(
-                address=117, 
+                address=motor_cfg.REG_POSITION_HI,  # ← 117 대신
                 count=2,
                 device_id=self.unit_id
             )
@@ -52,22 +52,28 @@ class MotorWorker(QtCore.QObject):
                 logger.debug(f"현재 위치 읽기 실패: {result_pos}")
                 return
 
-            # 데이터 파싱
+            # ===== 수정: 매직 넘버 → config =====
             reg126, reg127 = regs
-            r126_hi = (reg126 >> 8) & 0xFF
-            r126_lo =  reg126       & 0xFF
-            r127_hi = (reg127 >> 8) & 0xFF
-            r127_lo =  reg127       & 0xFF
+            r126_hi = (reg126 >> motor_cfg.BYTE_SHIFT) & motor_cfg.BYTE_MASK_LO  # ← 8, 0xFF 대신
+            r126_lo =  reg126 & motor_cfg.BYTE_MASK_LO
+            r127_hi = (reg127 >> motor_cfg.BYTE_SHIFT) & motor_cfg.BYTE_MASK_LO
+            r127_lo =  reg127 & motor_cfg.BYTE_MASK_LO
 
             position = ((r127_hi << 24) |
                         (r127_lo << 16) |
-                        (r126_hi << 8)  |
+                        (r126_hi << motor_cfg.BYTE_SHIFT) |
                         (r126_lo))
 
-            if position & 0x80000000:
-                position -= 0x100000000
+            # ===== 수정: 매직 넘버 → config =====
+            if position & motor_cfg.SINT32_SIGN_BIT:  # ← 0x80000000 대신
+                position -= motor_cfg.SINT32_OVERFLOW  # ← 0x100000000 대신
 
-            displacement_um = - (position / 10000.0) * 1000.0
+            # ===== 수정: 매직 넘버 → config =====
+            displacement_um = (
+                motor_cfg.POSITION_SIGN_INVERT *      # ← -1.0
+                (position / motor_cfg.POSITION_SCALE_FACTOR) *  # ← 10000.0
+                motor_cfg.UM_PER_MM                   # ← 1000.0
+            )
 
             # 메인 스레드로 데이터 전송
             self.data_ready.emit(displacement_um)
@@ -101,7 +107,7 @@ class MotorWorker(QtCore.QObject):
 
 class MotorMonitor(QtCore.QObject):
     """
-    MotorWorker를 별도의 QThread에서 실행하고 제어하는 컨트롤러 클래스.
+    MotorWorker를 별도의 QThread에서 실행하고 제어
     """
     start_worker = QtCore.pyqtSignal()
     stop_worker = QtCore.pyqtSignal()
@@ -145,8 +151,8 @@ class MotorMonitor(QtCore.QObject):
                 # 2. 스레드의 이벤트 루프 종료
                 self.thread.quit()
                 
-                # 3. 최대 2초 대기
-                if not self.thread.wait(2000):
+                # ===== 수정: 매직 넘버 → config =====
+                if not self.thread.wait(monitor_cfg.THREAD_WAIT_TIMEOUT_MS):  # ← 2000 대신
                     logger.warning("Motor 스레드가 정상 종료되지 않았습니다. 강제 종료합니다.")
                     self.thread.terminate()
                     self.thread.wait()

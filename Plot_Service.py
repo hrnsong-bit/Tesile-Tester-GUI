@@ -100,11 +100,12 @@ class PlotService(IDataReceiver):
         try:
             elapsed_sec = self.start_time.elapsed() / 1000.0
             
-            # ===== 개선: 메모리 누수 방지 =====
-            if len(self.x_data) >= self.max_plot_points:
+            # ===== 메모리 누수 방지 =====
+            if len(self.x_data) >= monitor_cfg.MAX_PLOT_POINTS:
                 self.x_data.pop(0)
                 self.y_data.pop(0)
-            
+                logger.debug(f"플롯 버퍼 정리: {len(self.x_data)} 포인트 유지")
+                
             self.x_data.append(elapsed_sec)
             self.y_data.append(float(force_n))
             self.data_line.setData(self.x_data, self.y_data)
@@ -136,20 +137,21 @@ class PlotService(IDataReceiver):
                 return
         
         try:
-            # ===== 개선: 메모리 누수 방지 =====
-            if len(self.temp_x) >= self.max_plot_points:
+            # ===== 메모리 누수 방지 =====
+            if len(self.temp_x) >= monitor_cfg.MAX_PLOT_POINTS:
                 self.temp_x.pop(0)
                 for i in range(4):
                     if len(self.temp_y[i]) > 0:
                         self.temp_y[i].pop(0)
-            
+                logger.debug(f"온도 플롯 버퍼 정리: {len(self.temp_x)} 포인트 유지")
+
             self.temp_x.append(elapsed)
             
             for i in range(min(len(temps), 4)):
                 val = temps[i] if temps[i] is not None else 0.0
                 self.temp_y[i].append(val)
             
-            # ===== 수정: 뷰 모드에 따라 분기 =====
+            # ===== 뷰 모드에 따라 분기 =====
             if self.temp_view_mode == 'unified':
                 self._update_unified_view()
             else:  # 'split'
@@ -457,10 +459,11 @@ class PlotService(IDataReceiver):
             if temp_widget and len(self.temp_x) > 0:
                 plot_item = temp_widget.getPlotItem()
                 if plot_item:
-                    if current_time > 60:
-                        plot_item.setXRange(current_time - 60, current_time, padding=0)
-                    else:
-                        plot_item.setXRange(0, max(60, current_time), padding=0)
+                   window = monitor_cfg.TEMP_PLOT_WINDOW_SEC
+                if current_time > window:
+                    plot_item.setXRange(current_time - window, current_time, padding=0)
+                else:
+                    plot_item.setXRange(0, max(window, current_time), padding=0)
         else:  # split
             if hasattr(self.ui, 'temp_plot_splits'):
                 for plot_widget in self.ui.temp_plot_splits:
