@@ -11,13 +11,6 @@ class TempController:
     def set_sv(self, channel: int, value: float):
         """
         CH1~4의 설정 온도(SV)를 변경합니다.
-        
-        Args:
-            channel: 채널 번호 (1~4)
-            value: 설정 온도 (°C)
-        
-        주소:
-            TM4: CH1=0x0034
         """
         logger.info(f"[set_sv] 호출됨 - channel={channel}, value={value}°C (type={type(value)})")
         
@@ -33,21 +26,19 @@ class TempController:
             logger.error(f"잘못된 채널 번호: {channel}")
             return None
         
-        # TM4는 1도 단위 (예: 50°C → 50)
         val_to_send = int(value)
         
         logger.info(f"[set_sv] 전송 준비 - addr=0x{addr:04X}, val_to_send={val_to_send}")
         
         try:
-            # 클라이언트 연결 확인
             if not self.client or not self.client.is_socket_open():
                 logger.error("[set_sv] Modbus 클라이언트가 연결되지 않았습니다.")
                 return None
             
             result = self.client.write_register(
                 address=addr, 
-                value=val_to_send, 
-                  # slave 대신  사용
+                value=val_to_send,
+                device_id=1
             )
             
             logger.info(f"[set_sv] Modbus 응답: {result}")
@@ -66,13 +57,6 @@ class TempController:
     def set_at_mode(self, channel: int, execute: bool):
         """
         오토튜닝 실행/정지
-        
-        Args:
-            channel: 채널 번호 (1~4)
-            execute: True=실행(1), False=정지(0)
-        
-        주소:
-            TM4: CH1=0x0064
         """
         logger.info(f"[set_at_mode] 호출됨 - channel={channel}, execute={execute}")
         
@@ -99,8 +83,8 @@ class TempController:
             
             result = self.client.write_register(
                 address=addr, 
-                value=val, 
-                
+                value=val,
+                device_id=1
             )
             
             logger.info(f"[set_at_mode] Modbus 응답: {result}")
@@ -120,17 +104,6 @@ class TempController:
     def set_run_stop(self, channel: int, run: bool):
         """
         제어 출력 운전/정지
-        
-        Args:
-            channel: 채널 번호 (1~4)
-            run: True=운전(0), False=정지(1)
-        
-        주소:
-            TM4: CH1=0x0032
-        
-        설정:
-            0: RUN (운전)
-            1: STOP (정지)
         """
         logger.info(f"[set_run_stop] 호출됨 - channel={channel}, run={run}")
         
@@ -146,7 +119,6 @@ class TempController:
             logger.error(f"잘못된 채널 번호: {channel}")
             return None
         
-        # 주의: 0=RUN, 1=STOP (역논리)
         val = 0 if run else 1
         
         logger.info(f"[set_run_stop] 전송 준비 - addr=0x{addr:04X}, val={val}")
@@ -158,8 +130,8 @@ class TempController:
             
             result = self.client.write_register(
                 address=addr, 
-                value=val, 
-                
+                value=val,
+                device_id=1
             )
             
             logger.info(f"[set_run_stop] Modbus 응답: {result}")
@@ -179,12 +151,6 @@ class TempController:
     def read_pv(self, channel: int):
         """
         현재 온도(PV) 읽기
-        
-        Args:
-            channel: 채널 번호 (1~4)
-        
-        Returns:
-            int: 현재 온도 원시값 (1°C 단위), 실패 시 None
         """
         base_addresses = {
             1: 0x03E8,  # CH1 PV
@@ -204,8 +170,8 @@ class TempController:
             
             result = self.client.read_input_registers(
                 address=addr, 
-                count=1, 
-                
+                count=1,
+                device_id=1
             )
             
             if result and not result.isError() and result.registers:

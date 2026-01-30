@@ -1,7 +1,7 @@
-# Pretension_Test.py
 import logging
 import time
 from PyQt5 import QtCore
+from config import pretension_cfg  # ===== 추가 =====
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,9 @@ class PretensionTest(QtCore.QObject):
         self._running = False
         self._target_load = 0.0
         
-        # 0.05초(50ms)마다 하중을 감시하는 타이머
+        # ===== 개선: config에서 간격 로드 =====
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(50) 
+        self.timer.setInterval(pretension_cfg.CHECK_INTERVAL_MS)
         self.timer.timeout.connect(self._check_load_loop)
 
     def start(self, target_speed_rps, target_load_n):
@@ -92,8 +92,11 @@ class PretensionTest(QtCore.QObject):
             # 1. 즉시 정지
             self.stop()
             
-            # 2. 기계적 진동이 멈출 때까지 0.5초 대기 후 -> 0점 잡기 실행
-            QtCore.QTimer.singleShot(500, self._perform_zeroing)
+            # 2. ===== 개선: config에서 대기 시간 로드 =====
+            QtCore.QTimer.singleShot(
+                pretension_cfg.SETTLING_TIME_MS, 
+                self._perform_zeroing
+            )
 
     def _perform_zeroing(self):
         """멈춘 뒤 자동으로 0점을 잡는 함수"""

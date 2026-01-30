@@ -1,6 +1,6 @@
 ﻿# Basic_Test.py
 import logging
-
+from config import motor_cfg
 logger = logging.getLogger(__name__)
 
 class BasicTest:
@@ -17,7 +17,7 @@ class BasicTest:
         try:
             rps = float(self.get_run_speed())
         except Exception:   
-            rps = 1.0  # 안전 기본값
+            rps = motor_cfg.DEFAULT_SAFE_SPEED_RPS
 
         # 조깅 속도만 맞추고, 바로 Jog- 실행 (당김 전용)
         self.motor.set_jog_speed(rps)

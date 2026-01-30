@@ -1,26 +1,32 @@
 ﻿# Monitor_loadcell.py
+
 import time
 import serial
+import re
 import logging
 from PyQt5 import QtCore
 
+from config import loadcell_cfg
+
 logger = logging.getLogger(__name__)
 
-_FULLSCALE = 2147483647  # 2^31 - 1 (sint32 max)
+_FULLSCALE = loadcell_cfg.FULLSCALE
 
-# ===================================================================
-# 1. Helper Functions (파일 스코프의 헬퍼 함수)
-# ===================================================================
+def _hex_dump(data: bytes, maxlen=256):
+    s = " ".join(f"{b:02X}" for b in data[:maxlen])
+    if len(data) > maxlen:
+        s += f" …(+{len(data)-maxlen}B)"
+    return s
 
 def _to_s32_be(b4: bytes) -> int:
-    """빅엔디언 4바이트 → 부호 32비트 정수"""
+    """빅엔디언 4바이트 → 부호 있는 32비트 정수"""
     if len(b4) != 4:
         return 0
     u = (b4[0] << 24) | (b4[1] << 16) | (b4[2] << 8) | b4[3]
     return u - 0x100000000 if (u & 0x80000000) else u
 
 def _read_until_crlf(ser, max_wait=1.5, idle_gap=0.10) -> bytes:
-    """CRLF(0x0D0A)까지 읽기 / idle_gap 동안 무수신 시 종료"""
+    """CRLF(0x0D0A)까지 읽기"""
     t0 = time.time()
     last = t0
     buf = bytearray()
@@ -35,33 +41,32 @@ def _read_until_crlf(ser, max_wait=1.5, idle_gap=0.10) -> bytes:
         else:
             if len(buf) and (time.time() - last) >= idle_gap:
                 break
+            elif n == 0:
+                time.sleep(0.01)
     return bytes(buf)
 
 def _msv_once_via_serial(ser: serial.Serial) -> tuple[bool, int, bytes]:
-    """
-    [워커 스레드에서 호출됨]
-    시리얼 포트를 통해 단일 측정(MSV)을 수행합니다.
-    """
+    """시리얼 포트를 통해 단일 측정(MSV) 수행"""
     if not ser or not ser.is_open:
-        logger.error("ERR: Serial 포트가 열려 있지 않습니다.")
+        logger.error("Serial 포트가 열려 있지 않습니다.")
         return (False, 0, b"")
 
     try:
         ser.reset_input_buffer()
-        # 1) 주소 선택
+        
+        # 주소 선택
         ser.write(b";S21;")
         ser.flush()
-        # [중요] time.sleep은 워커 스레드에서만 사용해야 합니다.
-        time.sleep(0.02) 
+        time.sleep(0.02)
 
-        # 2) 단일 측정 명령
+        # 단일 측정 명령
         ser.write(b";MSV?;")
         ser.flush()
 
         raw = _read_until_crlf(ser)
 
         if len(raw) < 4:
-            logger.warning("응답이 너무 짧습니다.")
+            logger.debug("응답이 너무 짧습니다.")
             return (False, 0, raw)
 
         first4 = raw[:4]
@@ -69,136 +74,154 @@ def _msv_once_via_serial(ser: serial.Serial) -> tuple[bool, int, bytes]:
         return (True, counts, raw)
 
     except Exception as e:
-        logger.error(f"_msv_once_via_serial 예외 발생: {e}")
+        logger.error(f"_msv_once_via_serial 예외: {e}")
         return (False, 0, b"")
 
+
 # ===================================================================
-# 2. Worker (별도 스레드에서 실행될 실제 통신 담당)
+# 1. Worker (QTimer를 run() 내에서 생성)
 # ===================================================================
 class LoadcellWorker(QtCore.QObject):
     """
-    별도의 스레드에서 시리얼 통신을 실행하는 워커.
-    시간이 오래 걸리는 I/O 작업을 GUI 스레드와 분리합니다.
+    QTimer 기반 로드셀 모니터링 워커
     """
     
-    # 데이터가 준비되었을 때 GUI 스레드로 보낼 시그널 (norm_x100k 값)
     data_ready = QtCore.pyqtSignal(float)
 
     def __init__(self, ser: serial.Serial, interval_ms: int):
         super().__init__()
         self.ser = ser
         self.interval_ms = interval_ms
-        self._running = False
-        logger.info(f"워커 생성됨 (주기: {interval_ms} ms)")
+        
+        # ✓ 수정: __init__에서 QTimer 생성 안 함
+        self.timer = None
+        
+        logger.info(f"LoadcellWorker 생성됨 (주기: {interval_ms} ms)")
 
     @QtCore.pyqtSlot()
     def run(self):
-        """워커 스레드의 메인 루프. _running 플래그가 True인 동안 반복."""
-        self._running = True
-        logger.info("워커 스레드 시작.")
-        self.loop_timer = QtCore.QTimer()
-        self.loop_timer.setInterval(self.interval_ms)
-        self.loop_timer.timeout.connect(self._do_work)
-        self.loop_timer.start()
+        """
+        워커 스레드 시작 시 호출
+        QTimer를 여기서 생성 (현재 스레드에서)
+        """
+        # ✓ 핵심: QTimer를 워커 스레드 내에서 생성
+        self.timer = QtCore.QTimer()
+        self.timer.setInterval(self.interval_ms)
+        self.timer.timeout.connect(self._do_work)
+        self.timer.start()
+        
+        logger.info(f"Loadcell 모니터링 타이머 시작 (스레드 ID: {int(QtCore.QThread.currentThreadId())})")
 
-        while self._running:
-            loop_start_time = time.time()
-            
-            try:
-                # --- 기존 read_and_update 로직 시작 ---
-                if not self.ser or not self.ser.is_open:
-                    time.sleep(0.5) # 연결 대기
-                    continue
-                    
-                ok, counts, raw = _msv_once_via_serial(self.ser)
-                if not ok:
-                    logger.debug("MSV 읽기 실패 (skip)")
-                    continue
-
-                normalized = counts / float(_FULLSCALE)
-                norm_x100k = normalized * 100000.0 * -0.0098
-                logger.debug(f"변환 결과: counts={counts}, normalized={normalized:.6f}, scaled={norm_x100k:.3f}")
-                # --- 기존 로직 끝 ---
-
-                # [중요] 데이터를 메인 스레드로 전송
-                self.data_ready.emit(norm_x100k)
-
-            except Exception as e:
-                logger.error(f"모니터링 스레드 예외: {e}")
-
-            # --- 주기 맞추기 ---
-            elapsed_sec = time.time() - loop_start_time
-            sleep_sec = (self.interval_ms / 1000.0) - elapsed_sec
-            
-            if sleep_sec > 0:
-                time.sleep(sleep_sec) 
+    def _do_work(self):
+        """타이머 콜백 - 매 interval마다 호출됨"""
+        try:
+            if not self.ser or not self.ser.is_open:
+                logger.debug("Serial 포트 연결 없음 (스킵)")
+                return
                 
+            ok, counts, raw = _msv_once_via_serial(self.ser)
+            if not ok:
+                logger.debug("MSV 읽기 실패 (skip)")
+                return
+
+            normalized = counts / float(_FULLSCALE)
+            norm_x100k = normalized * 100000.0 * -0.0098
+            
+            # 메인 스레드로 데이터 전송
+            self.data_ready.emit(norm_x100k)
+
+        except Exception as e:
+            logger.error(f"로드셀 모니터링 워커 예외: {e}", exc_info=True)
+
     @QtCore.pyqtSlot()
     def stop(self):
-        """메인 루프를 중지시킵니다."""
-        logger.info("워커 스레드 중지 요청.")
-        self._running = False
+        """타이머 정지"""
+        if self.timer and self.timer.isActive():
+            self.timer.stop()
+            logger.info("Loadcell 모니터링 타이머 정지")
 
     @QtCore.pyqtSlot(int)
     def set_interval(self, interval_ms: int):
-        """Hz 설정 변경 시 호출되어 주기를 업데이트합니다."""
-        logger.info(f"워커 주기 변경: {self.interval_ms} -> {interval_ms} ms")
+        """타이머 주기 변경"""
+        if not self.timer:
+            logger.warning("타이머가 아직 생성되지 않았습니다.")
+            return
+        
+        was_active = self.timer.isActive()
+        
+        if was_active:
+            self.timer.stop()
+        
         self.interval_ms = interval_ms
+        self.timer.setInterval(interval_ms)
+        
+        if was_active:
+            self.timer.start()
+        
+        logger.info(f"Loadcell 모니터링 주기 변경: {interval_ms} ms")
+
 
 # ===================================================================
-# 3. Monitor (GUI 스레드에서 워커를 제어하는 컨트롤러)
+# 2. Monitor (컨트롤러) - 변경 없음
 # ===================================================================
-
-#  ========== 수정된 부분: QObject 상속 ==========
 class LoadcellMonitor(QtCore.QObject):
     """
-    LoadcellWorker를 별도의 QThread에서 실행하고 제어하는 컨트롤러 클래스.
-    Main.py는 이 클래스만 알고 있으면 됩니다.
+    LoadcellWorker를 별도의 QThread에서 실행하고 제어
     """
-    # 워커 스레드에게 "시작하라"고 보낼 시그널
     start_worker = QtCore.pyqtSignal()
-    # 워커 스레드에게 "중지하라"고 보낼 시그널
     stop_worker = QtCore.pyqtSignal()
-    # 워커 스레드에게 "주기 변경하라"고 보낼 시그널
     interval_changed = QtCore.pyqtSignal(int)
 
     def __init__(self, ser: serial.Serial, update_callback, interval_ms=100):
-        #  ========== 수정된 부분: super() 호출 ==========
         super().__init__()
         
+        # 스레드와 워커 생성
         self.thread = QtCore.QThread()
         self.worker = LoadcellWorker(ser, interval_ms)
 
+        # 워커를 스레드로 이동
         self.worker.moveToThread(self.thread)
 
-        # --- 시그널 연결 ---
-        self.start_worker.connect(self.worker.run)
+        # 시그널 연결
+        self.thread.started.connect(self.worker.run)  # ← 스레드 시작 시 run() 호출
         self.stop_worker.connect(self.worker.stop)
         self.interval_changed.connect(self.worker.set_interval)
-
-        # [중요] 워커의 data_ready 시그널을 update_callback에 직접 연결
         self.worker.data_ready.connect(update_callback)
 
+        # 스레드 정리
         self.thread.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
 
+        # 스레드 시작
         self.thread.start()
-        self.start_worker.emit()
 
-        logger.info(f"모니터 컨트롤러 시작됨 (스레드 ID: {int(self.thread.currentThreadId())})")
+        logger.info(f"LoadcellMonitor 시작됨 (메인 스레드 ID: {int(QtCore.QThread.currentThreadId())})")
 
     def stop(self):
-        """스레드를 안전하게 종료시킵니다."""
+        """스레드를 안전하게 종료"""
         try:
             if hasattr(self, 'thread') and self.thread.isRunning():
-                logger.info("모니터 컨트롤러: 스레드 종료 중...")
+                logger.info("LoadcellMonitor: 스레드 종료 중...")
+                
+                # 1. 워커의 타이머 정지 (시그널로 전달)
                 self.stop_worker.emit()
+                
+                # 2. 약간의 대기 시간
+                QtCore.QThread.msleep(100)
+                
+                # 3. 스레드의 이벤트 루프 종료
                 self.thread.quit()
-                self.thread.wait(1000)
-            logger.info("모니터 컨트롤러 중지됨.")
+                
+                # 4. 최대 2초 대기
+                if not self.thread.wait(2000):
+                    logger.warning("Loadcell 스레드가 정상 종료되지 않았습니다. 강제 종료합니다.")
+                    self.thread.terminate()
+                    self.thread.wait()
+                
+            logger.info("LoadcellMonitor 중지 완료")
         except Exception as e:
-            logger.error(f"모니터 정지 중 예외: {e}")
+            logger.error(f"LoadcellMonitor 정지 중 예외: {e}", exc_info=True)
 
     def update_interval(self, interval_ms: int):
-        """Hz 변경 시, 실행 중인 워커의 주기를 변경합니다."""
+        """Hz 변경 시 워커의 주기를 변경"""
         self.interval_changed.emit(interval_ms)

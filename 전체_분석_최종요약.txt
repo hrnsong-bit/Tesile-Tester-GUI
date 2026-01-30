@@ -1,0 +1,332 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 전체 코드 아키텍처 분석 최종 요약
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📅 분석일: 2026-01-29
+👨‍💻 분석 대상: GUI 온도 제어 시스템
+📦 총 파일: 17개 Python 파일 (5,477 라인)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ 현재 아키텍처 강점
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. ✨ 명확한 계층 분리
+   GUI → Main → Controller → Hardware
+   각 계층의 역할이 명확함
+
+2. 🔌 하드웨어 추상화 완성
+   - Controller_motor.py
+   - Controller_Loadcell.py
+   - Controller_temp.py
+   독립적인 하드웨어 제어 계층
+
+3. 📊 실시간 모니터링 구조
+   Worker + QThread 패턴으로 
+   비동기 데이터 수집 구현
+
+4. 📈 그래프 서비스 분리
+   PlotService로 시각화 로직 독립
+
+5. 🧪 테스트 계층 분리
+   BasicTest, PretensionTest 
+   테스트 로직 독립적 관리
+
+6. 📝 로깅 시스템 완비
+   Logging_Config로 통합 로깅
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ 주요 개선 필요 사항 (우선순위별)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔴 HIGH (즉시 개선 권장)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Main.py God Object
+   ────────────────────────────────────────
+   현상: 18개 책임 집중, 966라인
+   영향: 테스트 불가, 유지보수 어려움
+   해결: ServiceRegistry 패턴 도입
+   
+   세부 책임:
+   • UI 관리 (5개)
+   • Controller 관리 (3개)  
+   • Monitor 관리 (3개)
+   • Test 관리 (2개)
+   • Manager 관리 (1개)
+   • 기타 (4개)
+
+
+🟡 MEDIUM (단기 개선 권장)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. Manager 계층 불일치
+   ────────────────────────────────────────
+   현상: Temp만 Manager 있음
+   
+   현재:
+   Motor:    Controller ✓  Manager ✗
+   Loadcell: Controller ✓  Manager ✗
+   Temp:     Controller ✓  Manager ✓
+   
+   해결: 3가지 옵션
+   
+   옵션 A) Manager 통일 ⭐ 추천
+   • Manager_motor.py 추가
+   • Manager_loadcell.py 추가
+   • 일관된 구조
+   
+   옵션 B) Manager 제거
+   • TempController에 통합
+   • 구조 단순화
+   
+   옵션 C) 역할 명확화
+   • Controller: 통신만
+   • Manager: UI + 로직
+
+
+3. Monitor 중복 코드
+   ────────────────────────────────────────
+   현상: 3개 파일 유사 패턴 반복
+   
+   Monitor_motor.py:    Worker ✓  QTimer ✓  QThread ✓
+   Monitor_loadcell.py: Worker ✓  QTimer ✓  QThread ✓
+   Monitor_temp.py:     Worker ✓  QTimer ✗  QThread ✓
+   
+   중복률: ~60% (430라인 중 ~260라인)
+   
+   해결: BaseMonitor 추상 클래스
+   • 공통 로직 상속
+   • 장비별 read_data()만 구현
+   • 코드 ~40% 감소 예상
+
+
+🟢 LOW (점진적 개선)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. PlotService 이중 초기화
+   ────────────────────────────────────────
+   현상: Main.py 라인 173, 236에서 2번 생성
+   해결: 라인 229-236 삭제
+   효과: 리소스 절약, 코드 정리
+
+
+5. QMessageBox 산재
+   ────────────────────────────────────────
+   현상: Main.py 28곳에서 직접 호출
+   해결: ErrorHandler 유틸리티 클래스
+   효과: 일관된 에러 처리
+
+
+6. 데드 코드
+   ────────────────────────────────────────
+   • TabDICUTM fallback 코드
+   • 주석 처리된 메서드
+   해결: 불필요한 코드 제거
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛠️ 즉시 실행 가능한 개선 (30분)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✂️ 1. PlotService 중복 제거 (5분)
+   Main.py 라인 229-236 삭제
+   
+   삭제할 코드:
+   ```python
+   # PlotService 초기화 (UI가 설정된 직후)
+   try:
+       # PlotService 생성 시 self (MainWindow)를 부모로 전달
+       self.plot_service = PlotService(self, self.ui.graphicsView)
+       logger.info("PlotService 초기화 완료")
+   except Exception as e:
+       logger.error(f"PlotService 초기화 실패: {e}")
+       self.plot_service = None # 실패 시 None으로 유지
+   ```
+   
+   이유: 라인 173에서 이미 초기화됨
+
+
+➕ 2. ErrorHandler 클래스 생성 (15분)
+   
+   파일: error_handler.py
+   ```python
+   from PyQt5 import QtWidgets
+   import logging
+   
+   logger = logging.getLogger(__name__)
+   
+   class ErrorHandler:
+       @staticmethod
+       def show_error(title, message, parent=None):
+           QtWidgets.QMessageBox.critical(parent, title, message)
+           logger.error(f"[ERROR] {title}: {message}")
+       
+       @staticmethod
+       def show_warning(title, message, parent=None):
+           QtWidgets.QMessageBox.warning(parent, title, message)
+           logger.warning(f"[WARNING] {title}: {message}")
+       
+       @staticmethod
+       def show_info(title, message, parent=None):
+           QtWidgets.QMessageBox.information(parent, title, message)
+           logger.info(f"[INFO] {title}: {message}")
+   ```
+   
+   사용 변경:
+   기존: QtWidgets.QMessageBox.critical(self, "오류", "연결 실패")
+   변경: ErrorHandler.show_error("오류", "연결 실패", self)
+
+
+✂️ 3. 데드 코드 제거 (10분)
+   
+   Main.py 라인 36-44 제거:
+   ```python
+   try:
+       from Data_Repack import TabDICUTM, TabMultiCompare, TabPreprocessor
+   except ImportError as e:
+       logger.error(f"Data_Repack.py 임포트 실패: {e}...")
+       # 실패 시 앱이 죽지 않도록 임시 클래스로 대체
+       TabDICUTM = QtWidgets.QWidget  # ← 이 부분 제거
+       TabMultiCompare = QtWidgets.QWidget
+       TabPreprocessor = QtWidgets.QWidget
+   ```
+   
+   이유: Data_Repack.py가 정상 작동하므로 불필요
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📅 개선 로드맵 (단계별)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1단계: 즉시 개선 (30분) 🟢
+────────────────────────────────────────
+✓ PlotService 중복 초기화 제거
+✓ ErrorHandler 유틸리티 추가
+✓ 데드 코드 제거
+
+영향도: 없음 (안전한 정리)
+효과: 코드 품질 향상
+
+
+2단계: 단기 개선 (2시간) 🟡
+────────────────────────────────────────
+✓ Manager 계층 통일
+
+작업:
+1. Manager_motor.py 생성
+2. Manager_loadcell.py 생성  
+3. Main.py에서 Manager 활용
+
+영향도: 중간 (호출 부분 변경)
+효과: 일관된 아키텍처
+
+
+3단계: 중기 개선 (4시간) 🟡
+────────────────────────────────────────
+✓ BaseMonitor 추상화
+
+작업:
+1. base_monitor.py 생성
+2. 3개 Monitor 리팩토링
+3. 중복 코드 제거 (~200라인)
+
+영향도: 중간 (Monitor 구조 변경)
+효과: 유지보수성 대폭 향상
+
+
+4단계: 장기 개선 (8시간+) 🔴
+────────────────────────────────────────
+✓ Main.py God Object 해체
+
+작업:
+1. ServiceRegistry 클래스
+2. ConnectionManager 클래스
+3. EventCoordinator 클래스
+4. Main.py 슬림화 (966→300라인)
+
+영향도: 높음 (전체 구조 변경)
+효과: 확장성, 테스트 용이성 극대화
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📈 예상 개선 효과
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌────────────────────┬──────────┬──────────┬─────────┐
+│ 항목               │  현재    │  개선 후 │  개선률 │
+├────────────────────┼──────────┼──────────┼─────────┤
+│ 전체 코드 라인     │ 5,477    │ ~4,800   │  -12%   │
+│ Main.py 라인       │   966    │   ~300   │  -69%   │
+│ 중복 코드 비율     │   ~15%   │    ~5%   │  -10%p  │
+│ Monitor 코드       │   430    │   ~250   │  -42%   │
+│ 테스트 가능성      │   불가   │    가능  │   ∞     │
+│ 신규 장비 추가     │  4시간   │   1시간  │  -75%   │
+│ 버그 수정 영향범위 │   전체   │ 해당모듈 │  격리됨 │
+└────────────────────┴──────────┴──────────┴─────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 권장 사항
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 지금 바로 실행 (1단계 - 30분)
+   → 즉각적인 코드 품질 개선
+   → 리스크 없음
+
+📌 다음 주 안에 실행 (2단계 - 2시간)
+   → 아키텍처 일관성 확보
+   → 향후 확장성 확보
+
+📌 여유 있을 때 진행 (3단계 - 4시간)
+   → 유지보수 비용 대폭 감소
+   → 버그 감소
+
+📌 대규모 리팩토링 (4단계 - 8시간+)
+   → 충분한 테스트 후 진행
+   → 단계적 적용 (모듈별)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 결론
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+현재 코드는 **기능적으로 완성**되어 있습니다.
+
+강점:
+✅ 명확한 계층 구조
+✅ 하드웨어 추상화 완료
+✅ 실시간 모니터링 구현
+✅ 최근 온도 제어 개선 완료 (Start/Stop 분리)
+
+개선 필요:
+⚠️ Main.py 책임 과중
+⚠️ Manager 계층 불일치
+⚠️ Monitor 코드 중복
+
+추천:
+🎯 1단계(30분) 개선은 **즉시 진행** 권장
+   → 리스크 없이 품질 향상
+
+🎯 2~3단계는 **다음 기능 추가 전**에 진행 권장
+   → 확장성 확보, 기술 부채 방지
+
+🎯 4단계는 **장기 계획**으로 진행
+   → 충분한 시간 확보 후 단계적 적용
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📎 첨부 파일
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 아키텍처_개선안_상세보고서.txt
+   → 문제점 상세 분석 및 해결책
+
+2. 개선안_예시코드.py
+   → BaseMonitor, ServiceRegistry, 
+      ConnectionManager, ErrorHandler 구현 예시
+
+3. 온도버튼_수정_보고서.txt
+   → 최근 완료된 온도 제어 개선 내역
+
+4. Manager_temp_로직변경_보고서.txt
+   → SV → RUN → AT 로직 순서 변경 내역
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+분석 완료일: 2026-01-29
+분석자: AI Architecture Analyzer
+버전: 1.0

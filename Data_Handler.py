@@ -1,207 +1,199 @@
 # Data_Handler.py
-from PyQt5 import QtWidgets
-from Plot_Service import PlotService # PlotService 타입 힌팅
-from typing import Callable # 콜백 함수 타입 힌팅
+"""
+데이터 흐름 조정자 (Coordinator)
+
+역할:
+- 각 컴포넌트 간 데이터 전달
+- 이벤트 처리 순서 관리
+"""
+
+import time
 import logging
+from typing import Callable
+
+from interfaces import (
+    IDataReceiver, 
+    IUIUpdater, 
+    ISafetyGuard, 
+    IDataSynchronizer,
+    ITensioningController
+)
 
 logger = logging.getLogger(__name__)
 
+
 class DataHandler:
-    def __init__(self, ui: 'Ui_MainWindow', plot_service: PlotService | None, stop_all_tests_callback: Callable):
-
-        self.ui = ui
-        self.plot_service = plot_service
-        self.stop_all_tests_callback = stop_all_tests_callback # 중앙 정지 함수
-
-        # === 가드 로직용 상태 변수 ===
+    """
+    데이터 흐름 조정자
+    
+    단일 책임: 데이터를 적절한 컴포넌트로 라우팅
+    """
+    
+    def __init__(
+        self,
+        ui_updater: IUIUpdater,
+        safety_guard: ISafetyGuard,
+        synchronizer: IDataSynchronizer,
+        tensioning: ITensioningController,
+        data_receiver: IDataReceiver,  # PlotService 등
+        stop_callback: Callable
+    ):
+        """
+        의존성 주입 (Dependency Injection)
+        
+        Args:
+            ui_updater: UI 업데이트 담당
+            safety_guard: 안전 가드 담당
+            synchronizer: 데이터 동기화 담당
+            tensioning: 텐셔닝 제어 담당
+            data_receiver: 데이터 수신 담당 (PlotService)
+            stop_callback: 긴급 정지 콜백
+        """
+        self.ui_updater = ui_updater
+        self.guard = safety_guard
+        self.sync = synchronizer
+        self.tension = tensioning
+        self.receiver = data_receiver
+        self.stop_callback = stop_callback
+        
+        # 상태 변수
         self.start_pos_um = 0.0
-        self.last_force = 0.0
         self.last_pos_um = 0.0
+        self.last_force = 0.0
+        self.last_temp_ch1 = 0.0
         
-        self._disp_guard_fired = False
-        self._force_guard_fired = False
-
-        # ========== 텐셔닝 상태 변수 추가 ==========
-
-        self.is_tensioning = False
-        self.tension_threshold = 0.0
-        # ==========================================
+        logger.info("DataHandler 초기화 완료 (의존성 주입)")
+    
+    # ========================================================================
+    # 모터 데이터 처리
+    # ========================================================================
+    
+    def update_motor_position(self, pos_um: float):
+        """
+        모터 위치 업데이트
         
-        logger.info("초기화 완료")
-
-    # ========================
-    # 가드 제어 메서드 (Main.py에서 호출)
-    # ========================
-    def reset_disp_guard(self):
-        self._disp_guard_fired = False
-
-    def reset_force_guard(self):
-        self._force_guard_fired = False
-        
-    def reset_all_guards(self):
-        self.reset_disp_guard()
-        self.reset_force_guard()
-        logger.info("모든 가드 리셋됨")
-
-    #  ========== 텐셔닝 제어 메서드==========
-    def start_tensioning(self, threshold_N: float):
-        """텐셔닝 모드를 시작합니다. (양수/음수 모두 허용)"""
-        #  0 이하(<=)가 아닌, 0일 때만 거부하도록 수정
-        if threshold_N == 0.0:
-            logger.error(f"텐셔닝 감지 하중은 0이 될 수 없습니다: {threshold_N}")
-            return
+        처리 순서:
+        1. UI 업데이트
+        2. 데이터 동기화 버퍼에 추가
+        3. 안전 가드 검사 (텐셔닝 중이 아닐 때만)
+        """
+        try:
+            timestamp = time.time()
+            self.last_pos_um = float(pos_um)
             
-        self.is_tensioning = True
-        self.tension_threshold = threshold_N
-        # 메인 가드 플래그는 리셋
-        self.reset_all_guards()
-        logger.info(f"텐셔닝 모드 시작. 목표 하중: {threshold_N:.3f} N")
-
-    def stop_tensioning(self):
-        """텐셔닝 모드를 수동으로 중지합니다."""
-        self.is_tensioning = False
-        logger.info("텐셔닝 모드 중지.")
-    # ============================================
-
+            # 1. UI 업데이트
+            self.ui_updater.update_motor_position(pos_um)
+            
+            # 2. 동기화 버퍼에 추가
+            self.sync.add_position(timestamp, pos_um)
+            
+            # 3. 안전 가드 (텐셔닝 중엔 체크 안 함)
+            if not self.tension.is_active():
+                exceeded, message = self.guard.check_displacement_limit(
+                    pos_um, 
+                    self.start_pos_um
+                )
+                
+                if exceeded:
+                    self.stop_callback(reason=message)
+        
+        except Exception as e:
+            logger.error(f"모터 위치 처리 실패: {e}", exc_info=True)
+    
+    # ========================================================================
+    # 로드셀 데이터 처리
+    # ========================================================================
+    
+    def update_loadcell_value(self, force_n: float):
+        """
+        로드셀 값 업데이트
+        
+        처리 순서:
+        1. UI 업데이트
+        2. 동기화 버퍼에 추가
+        3. 매칭된 위치 찾기
+        4. 데이터 수신자(PlotService)에 전달
+        5. 텐셔닝 체크
+        6. 안전 가드 체크 (텐셔닝 중이 아닐 때만)
+        """
+        try:
+            timestamp = time.time()
+            previous_force = self.last_force
+            self.last_force = float(force_n)
+            
+            # 1. UI 업데이트
+            self.ui_updater.update_loadcell_value(force_n)
+            
+            # 2. 동기화 버퍼에 추가
+            self.sync.add_force(timestamp, force_n)
+            
+            # 3. 매칭된 위치 찾기
+            matched_pos = self.sync.get_matched_position(timestamp)
+            
+            # 4. 데이터 수신자에 전달 (CSV 로깅, 그래프 등)
+            self.receiver.receive_loadcell_data(
+                force_n, 
+                matched_pos,
+                self.last_temp_ch1
+            )
+            
+            # 5. 텐셔닝 체크
+            if self.tension.is_active():
+                if self.tension.check_threshold(force_n):
+                    self.tension.stop_tensioning()
+                    self.stop_callback(reason="텐셔닝 목표 도달")
+                return  # 텐셔닝 중엔 안전 가드 체크 안 함
+            
+            # 6. 안전 가드
+            exceeded, message = self.guard.check_force_limit(
+                force_n, 
+                previous_force
+            )
+            
+            if exceeded:
+                self.stop_callback(reason=message)
+        
+        except Exception as e:
+            logger.error(f"로드셀 값 처리 실패: {e}", exc_info=True)
+    
+    # ========================================================================
+    # 온도 데이터 처리
+    # ========================================================================
+    
+    def update_temperature_ch1(self, temp_ch1: float):
+        """
+        온도 CH1 업데이트 (Test 로그용)
+        
+        Args:
+            temp_ch1: CH1 온도 (°C)
+        """
+        try:
+            if temp_ch1 is not None:
+                self.last_temp_ch1 = float(temp_ch1)
+                logger.debug(f"CH1 온도 업데이트: {temp_ch1:.1f}°C")
+        
+        except Exception as e:
+            logger.error(f"온도 업데이트 실패: {e}")
+    
+    # ========================================================================
+    # 상태 관리
+    # ========================================================================
+    
     def capture_start_position(self):
-        """테스트 시작 시점의 위치를 캡처합니다."""
+        """테스트 시작 위치 캡처"""
         self.start_pos_um = self.last_pos_um
         logger.info(f"시작 위치 캡처: {self.start_pos_um:.1f} um")
-
-    def reset_ui_labels(self):
-        """연결 해제 시 관련 UI 라벨을 초기화합니다."""
-        logger.info("UI 라벨 초기화")
-        # Setting 탭
-        if hasattr(self.ui, "En0Positionnow_label"):
-            self.ui.En0Positionnow_label.setText("")
-        if hasattr(self.ui, "Load0Currentnow_label"):
-            self.ui.Load0Currentnow_label.setText("")
-        
-        # Test 탭
-        if hasattr(self.ui, "test_pos_label"):
-            self.ui.test_pos_label.setText("0.0")
-        if hasattr(self.ui, "test_load_label"):
-            self.ui.test_load_label.setText("0.000")
-
-    # ========================
-    # 엔코더 업데이트 콜백
-    # ========================
-    def update_motor_position(self, pos_um, *_):
-        try:
-            # 1) 표시 갱신
-            current_pos_um = float(pos_um)
-            if hasattr(self, "ui") and hasattr(self.ui, "En0Positionnow_label"):
-                self.ui.En0Positionnow_label.setText(f"{current_pos_um:.1f} [um]")
-
-            if hasattr(self, "ui") and hasattr(self.ui, "test_pos_label"):
-                self.ui.test_pos_label.setText(f"{current_pos_um:.1f} [um]")
-
-            # 2) 최신 위치 저장
-            self.last_pos_um = current_pos_um 
-            
-            # 텐셔닝 모드일 때는 변위 가드 비활성화
-            if self.is_tensioning:
-                return
-            
-            # 3) 한계(mm) 읽기 → μm로 변환
-            limit_mm = 0.0
-            try:
-                if hasattr(self, "ui") and hasattr(self.ui, "DisplaceLimitMax_doubleSpinBox"):
-                    limit_mm = float(self.ui.DisplaceLimitMax_doubleSpinBox.value())
-            except Exception:
-                limit_mm = 0.0
-
-            if limit_mm <= 0:
-                self._disp_guard_fired = False
-                return
-
-            limit_um = limit_mm * 1000.0
-            tol_um = getattr(self, "disp_tol_um", 5.0)
-
-            # 4) '총' 변위 변화량 계산
-            pos_delta = abs(self.last_pos_um - self.start_pos_um)
-
-            # 5) '총' 변위 변화량 가드
-            if (not self._disp_guard_fired) and (pos_delta >= (limit_um - tol_um)):
-                logger.warning(f"[GUARD] ΔPos(Total)={pos_delta:.1f} (start={self.start_pos_um:.1f}, now={self.last_pos_um:.1f}) ≥ limit={limit_um:.1f} (tol={tol_um} μm) → STOP")
-                
-                self.stop_all_tests_callback(reason=f"변위 가드 발동 (ΔPos={pos_delta:.1f})")
-                self._disp_guard_fired = True
-
-        except Exception as e:
-            logger.error(f"update_motor_position 예외: {e}")
-
-    # ========================
-    # 로드셀 업데이트 콜백
-    # ========================
-    def update_loadcell_value(self, norm_x100k: float, *_):
-        try:
-            # 1) 현재 값(new)과 이전 값(old)을 명확히 구분
-            current_force = float(norm_x100k)
-            previous_force = self.last_force
-
-            # 2) 표시 갱신 (현재 값으로)
-            if hasattr(self, "ui") and hasattr(self.ui, "Load0Currentnow_label"):
-               self.ui.Load0Currentnow_label.setText(f"{current_force:.3f} [N]") 
-
-            if hasattr(self, "ui") and hasattr(self.ui, "test_load_label"):
-               self.ui.test_load_label.setText(f"{current_force:.3f} [N]")
-
-            #  ========== 텐셔닝 로직 ==========
-            if self.is_tensioning:
-                
-                stop_condition_met = False
-                
-                # 1. 목표 하중이 양수일 때 (인장, 당기기)
-                if self.tension_threshold > 0:
-                    if current_force >= self.tension_threshold:
-                        stop_condition_met = True
-                
-                # 2. 목표 하중이 음수일 때 (압축, 밀기)
-                elif self.tension_threshold < 0:
-                    if current_force <= self.tension_threshold:
-                        stop_condition_met = True
-                
-                # 3. 정지 조건 충족 시
-                if stop_condition_met:
-                    logger.warning(f"[TENSION] 목표 하중 도달 (Target: {self.tension_threshold:.3f} N, Current: {current_force:.3f} N) -> STOP")
-                    self.is_tensioning = False # 플래그를 먼저 내림
-                    self.stop_all_tests_callback(reason="텐셔닝 하중 도달")
-                
-                # 텐셔닝 중에는 플로팅/가드 로직을 건너뛰고 값만 갱신
-                self.last_force = current_force
-                return # Early exit
-            # ==============================================
-
-            # ========== PlotService에 데이터 전송 ==========
-            if self.plot_service:
-                       self.plot_service.update_data(current_force, self.last_pos_um)
-
-            # 3) 한계 읽기
-            limit_val = 0.0
-            try:
-                if hasattr(self, "ui") and hasattr(self.ui, "ForceLimitMax_doubleSpinBox"):
-                    limit_val = float(self.ui.ForceLimitMax_doubleSpinBox.value())
-                elif hasattr(self, "ui") and hasattr(self.ui, "LoadcellLimitMax_doubleSpinBox"):
-                    limit_val = float(self.ui.LoadcellLimitMax_doubleSpinBox.value())
-            except Exception:
-                limit_val = 0.0
-
-            if limit_val <= 0:
-                self._force_guard_fired = False
-            else:
-                # 4) '주기당' 변화율 계산
-                force_delta = abs(current_force - previous_force)
-                
-                # 5) 변화율 가드
-                if (not getattr(self, "_force_guard_fired", False)) and (force_delta >= limit_val):
-                    logger.warning(f"[GUARD:LC] ΔF/cycle={force_delta:.3f} (prev={previous_force:.3f}, now={current_force:.3f}) ≥ limit={limit_val:.3f} N/cycle → STOP")
-                    
-                    self.stop_all_tests_callback(reason=f"하중 가드 발동 (ΔF={force_delta:.3f})")
-                    self._force_guard_fired = True
-
-            # 6) 중요: 모든 로직이 끝난 후, '이전 값'을 '현재 값'으로 업데이트
-            self.last_force = current_force
-
-        except Exception as e:
-            logger.error(f"update_loadcell_value 예외: {e}")
+    
+    def reset_guards(self):
+        """모든 가드 리셋"""
+        self.guard.reset_all()
+        logger.info("모든 가드 리셋")
+    
+    def start_tensioning(self, threshold_n: float):
+        """텐셔닝 시작"""
+        self.tension.start_tensioning(threshold_n)
+        self.reset_guards()
+    
+    def stop_tensioning(self):
+        """텐셔닝 중지"""
+        self.tension.stop_tensioning()

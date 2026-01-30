@@ -867,10 +867,10 @@ class Ui_MainWindow(object):
         self.temp_main_layout = QtWidgets.QHBoxLayout(self.tab_new)
         self.temp_main_layout.setObjectName("temp_main_layout")
 
-        # --- [1] 왼쪽 채널 컨트롤 패널 ---
+        # 왼쪽 채널 컨트롤 패널
         self.temp_ctrl_group = QtWidgets.QGroupBox(self.tab_new)
         self.temp_ctrl_group.setTitle("Channel Monitor & Control")
-        self.temp_ctrl_group.setFixedWidth(320) # 기존 너비 유지
+        self.temp_ctrl_group.setFixedWidth(320)
         self.ctrl_vbox = QtWidgets.QVBoxLayout(self.temp_ctrl_group)
         
         # 채널별 위젯 참조 딕셔너리
@@ -903,7 +903,7 @@ class Ui_MainWindow(object):
             self.temp_channels[i] = {"chk": chk, "lbl": lbl, "color": colors[i-1]}
             self.ctrl_vbox.addSpacing(10)
 
-        # --- 구분선 추가 (에러 없는 방식) ---
+        # --- 구분선 추가 ---
         line = QtWidgets.QFrame()
         line.setFrameShape(QtWidgets.QFrame.HLine)
         line.setFrameShadow(QtWidgets.QFrame.Sunken)
@@ -914,38 +914,104 @@ class Ui_MainWindow(object):
         self.temp_setting_group = QtWidgets.QGroupBox("Control Settings")
         self.temp_setting_form = QtWidgets.QFormLayout(self.temp_setting_group)
 
-        # CH1 SV 입력 (Address: 0x0000)
+        # CH1 SV 입력 (Address: 0x0034)
         self.temp_sv_input = QtWidgets.QDoubleSpinBox()
-        self.temp_sv_input.setRange(0, 500) # TM4 입력 범위 [cite: 876]
+        self.temp_sv_input.setRange(0, 500)
         self.temp_sv_input.setDecimals(1)
         self.temp_sv_input.setSuffix(" °C")
         self.temp_sv_input.setMinimumHeight(35)
-        self.temp_setting_form.addRow("CH1 Temp:", self.temp_sv_input)
+        self.temp_setting_form.addRow("CH1 Target:", self.temp_sv_input)
 
         # 오토튜닝 ON/OFF (Address: 0x0064)
         self.at_exec_combo = QtWidgets.QComboBox()
         self.at_exec_combo.addItems(["OFF (정지)", "ON (실행)"])
         self.at_exec_combo.setMinimumHeight(35)
+        self.at_exec_combo.setCurrentIndex(1)
         self.temp_setting_form.addRow("오토 튜닝:", self.at_exec_combo)
 
-        self.ctrl_vbox.addWidget(self.temp_setting_group)
-        self.ctrl_vbox.addStretch() # 버튼을 아래로 밀어냄
+        # ===== 새로 추가: 구분선 =====
+        line_stabilization = QtWidgets.QFrame()
+        line_stabilization.setFrameShape(QtWidgets.QFrame.HLine)
+        line_stabilization.setFrameShadow(QtWidgets.QFrame.Sunken)
+        self.temp_setting_form.addRow(line_stabilization)
 
-        # 온도 설정/제어 버튼
-        self.temp_set_btn = QtWidgets.QPushButton("온도 설정/제어")
-        self.temp_set_btn.setMinimumHeight(50)
-        self.temp_set_btn.setStyleSheet("""
-            color: black; 
+        # ===== 새로 추가: 안정화 범위 설정 =====
+        self.temp_stability_range = QtWidgets.QDoubleSpinBox()
+        self.temp_stability_range.setRange(0.1, 50.0)
+        self.temp_stability_range.setDecimals(1)
+        self.temp_stability_range.setSuffix(" °C")
+        self.temp_stability_range.setValue(2.0)  # 기본값 ±2°C
+        self.temp_stability_range.setMinimumHeight(35)
+        self.temp_setting_form.addRow("안정화 범위 (±):", self.temp_stability_range)
+
+        # ===== 새로 추가: 안정화 시간 설정 =====
+        self.temp_stability_time = QtWidgets.QSpinBox()
+        self.temp_stability_time.setRange(1, 60)
+        self.temp_stability_time.setSuffix(" 분")
+        self.temp_stability_time.setValue(5)  # 기본값 5분
+        self.temp_stability_time.setMinimumHeight(35)
+        self.temp_setting_form.addRow("안정화 시간:", self.temp_stability_time)
+
+        # ===== 새로 추가: 안정화 감지 활성화 체크박스 =====
+        self.temp_stability_enabled = QtWidgets.QCheckBox("안정화 감지 활성화")
+        self.temp_stability_enabled.setChecked(True)
+        self.temp_stability_enabled.setMinimumHeight(35)
+        self.temp_setting_form.addRow(self.temp_stability_enabled)
+
+        self.ctrl_vbox.addWidget(self.temp_setting_group)
+        # ===== 그래프 뷰 모드 선택 =====
+        self.temp_view_group = QtWidgets.QGroupBox("Graph View Mode")
+        self.temp_view_layout = QtWidgets.QVBoxLayout(self.temp_view_group)
+
+        self.temp_view_unified = QtWidgets.QRadioButton("통합 뷰 (4채널 한 화면)")
+        self.temp_view_unified.setChecked(True)  # 기본값
+        self.temp_view_layout.addWidget(self.temp_view_unified)
+
+        self.temp_view_split = QtWidgets.QRadioButton("분할 뷰 (4개 그래프)")
+        self.temp_view_layout.addWidget(self.temp_view_split)
+
+        self.ctrl_vbox.addWidget(self.temp_view_group)
+        self.ctrl_vbox.addStretch()
+        self.ctrl_vbox.addStretch()
+
+        # 온도 Start/Stop 버튼들을 가로로 배치
+        self.temp_btn_layout = QtWidgets.QHBoxLayout()
+        self.temp_btn_layout.setSpacing(5)  # 버튼 간 간격 설정
+        
+        # Start 버튼 (왼쪽)
+        self.temp_start_btn = QtWidgets.QPushButton("Start")
+        self.temp_start_btn.setMinimumHeight(50)
+        self.temp_start_btn.setStyleSheet("""
+            color: white; 
+            background-color: #4CAF50;
             font-weight: bold; 
             font-size: 12pt;
             border-radius: 5px;
-            border: 1px solid #CCCCCC;
+            border: 1px solid #45a049;
         """)
-        self.ctrl_vbox.addWidget(self.temp_set_btn)
+        self.temp_btn_layout.addWidget(self.temp_start_btn)
+        
+        # Stop 버튼 (오른쪽)
+        self.temp_stop_btn = QtWidgets.QPushButton("Stop")
+        self.temp_stop_btn.setMinimumHeight(50)
+        self.temp_stop_btn.setStyleSheet("""
+            color: white; 
+            background-color: #f44336;
+            font-weight: bold; 
+            font-size: 12pt;
+            border-radius: 5px;
+            border: 1px solid #da190b;
+        """)
+        self.temp_btn_layout.addWidget(self.temp_stop_btn)
+        
+        self.ctrl_vbox.addLayout(self.temp_btn_layout)
         
         self.temp_main_layout.addWidget(self.temp_ctrl_group)
 
-        # --- [2] 오른쪽 실시간 그래프 패널 (pyqtgraph) ---
+        # ---오른쪽 실시간 그래프 패널 (pyqtgraph) ---
+        # 스택 위젯으로 통합/분할 뷰 전환
+        self.temp_plot_stack = QtWidgets.QStackedWidget()
+
         self.temp_plot = PlotWidget(self.tab_new)
         self.temp_plot.setBackground('w')
         self.temp_plot.showGrid(x=True, y=True)
@@ -954,7 +1020,32 @@ class Ui_MainWindow(object):
         self.temp_plot.setLabel('bottom', 'Time', units='s')
         self.temp_main_layout.addWidget(self.temp_plot)
 
-        #  탭 추가 코드 (이 코드가 있어야 화면에 나타납니다)
+        # 분할 뷰 (4개 그래프)
+        self.temp_plot_split_widget = QtWidgets.QWidget()
+        self.temp_plot_split_layout = QtWidgets.QGridLayout(self.temp_plot_split_widget)
+        self.temp_plot_split_layout.setSpacing(5)
+
+        self.temp_plot_splits = []
+        for i in range(4):
+            plot = PlotWidget(self.temp_plot_split_widget)
+            plot.setBackground('w')
+            plot.showGrid(x=True, y=True)
+            plot.setLabel('left', 'Temperature', units='°C')
+            plot.setLabel('bottom', 'Time', units='s')
+            plot.setTitle(f'CH{i+1}', color=colors[i], size='12pt')
+    
+            row = i // 2
+            col = i % 2
+            self.temp_plot_split_layout.addWidget(plot, row, col)
+            self.temp_plot_splits.append(plot)
+
+        # 스택에 추가
+        self.temp_plot_stack.addWidget(self.temp_plot)  # index 0
+        self.temp_plot_stack.addWidget(self.temp_plot_split_widget)  # index 1
+
+        self.temp_main_layout.addWidget(self.temp_plot_stack)
+
+        #  탭 추가 코드
         self.Main_tabWidget.addTab(self.tab_new, "Temp")
         # =================================================================
         # 4. Test 탭 (tab_3)

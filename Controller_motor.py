@@ -1,4 +1,5 @@
 ﻿# Controller_motor.py
+
 from pymodbus.client.serial import ModbusSerialClient
 import time
 import serial
@@ -37,7 +38,11 @@ class MotorService:
              logger.debug("read_current_position: 연결 없음")
              return None
         try:
-            rr = self.client.read_holding_registers(address=0x0075, count=2)
+            rr = self.client.read_holding_registers(
+                address=0x0075, 
+                count=2,
+                device_id=self.unit_id
+            )
             logger.debug(f"curpos read object: {rr}")
             regs = getattr(rr, "registers", None)
             logger.debug(f"curpos registers: {regs}")
@@ -72,7 +77,11 @@ class MotorService:
              logger.error(f"명령 전송 실패: (연결 없음) address={hex(address)}")
              return None
         try:
-            return self.client.write_register(address=address, value=value)
+            return self.client.write_register(
+                address=address, 
+                value=value,
+                device_id=self.unit_id
+            )
         except Exception as e:
             logger.error(f"명령 전송 실패 (address={hex(address)}): {e}")
 
@@ -90,10 +99,8 @@ class MotorService:
 
     def set_jog_speed(self, speed_rps):
         try:
-            # 1 RPS 단위로 보정 (0.01 rps 단위 아님)
             value = int(speed_rps) 
             logger.info(f"조깅 속도 설정 → {speed_rps} rps (전송 값: {value})")
-            # 조그 속도 레지스터 (0x0134)
             result = self.send_command(0x0134, value)
             if result is not None and not result.isError():
                 logger.debug("속도 설정 성공")
@@ -104,11 +111,9 @@ class MotorService:
 
     def set_continuous_speed(self, speed_rps):
         try:
-            # 1 RPS 단위 보정 (set_jog_speed와 동일)
             value = int(speed_rps)
             logger.info(f"지속 회전(절대이동) 속도 설정 → {speed_rps} rps (전송 값: {value})")
             
-            # 주소: 0x0132 (매뉴얼 Step 1 확인)
             result = self.send_command(0x0132, value) 
             if result is not None and not result.isError():
                 logger.debug("지속 속도 설정 성공")
@@ -122,7 +127,11 @@ class MotorService:
             logger.warning(f"레지스터 {hex(address)} 읽기 실패 (연결 없음)")
             return 0
         try:
-            result = self.client.read_holding_registers(address=address, count=1)
+            result = self.client.read_holding_registers(
+                address=address, 
+                count=1,
+                device_id=self.unit_id
+            )
             if result.isError() or not result.registers:
                 logger.warning(f"레지스터 {hex(address)} 읽기 실패")
                 return 0
@@ -136,7 +145,11 @@ class MotorService:
             logger.warning("위치 읽기 실패 (연결 없음)")
             return 0
         try:
-            result = self.client.read_holding_registers(address=0x0139, count=2)
+            result = self.client.read_holding_registers(
+                address=0x0139, 
+                count=2,
+                device_id=self.unit_id
+            )
             if result.isError() or not result.registers or len(result.registers) < 2:
                 logger.warning("Target 위치 읽기 실패")
                 return 0
@@ -155,8 +168,6 @@ class MotorService:
     # zero_position: 정지→0,0 쓰기(0x0141)→커맨드8(0x0143)
     # ─────────────────────────────
     def zero_position(self) -> bool:
-        # (이 기능은 "현재 위치를 0점으로 설정"하는 기능(커맨드 8)으로,
-        # "0점 위치로 이동"하는 move_to_absolute(커맨드 1)와는 다름)
         if not self.client or not self.client.is_socket_open():
             logger.error("0점 설정 실패 (연결 없음)")
             return False
@@ -164,12 +175,20 @@ class MotorService:
             self.stop_motor() 
             time.sleep(0.05)
 
-            w = self.client.write_registers(address=0x0141, values=[0x0000, 0x0000])
+            w = self.client.write_registers(
+                address=0x0141, 
+                values=[0x0000, 0x0000],
+                device_id=self.unit_id
+            )
             if (not w) or (hasattr(w, "isError") and w.isError()):
                 logger.error(f"0값 쓰기 실패: {w}")
                 return False
 
-            c = self.client.write_register(address=0x0143, value=8)
+            c = self.client.write_register(
+                address=0x0143, 
+                value=8,
+                device_id=self.unit_id
+            )
             if (not c) or (hasattr(c, "isError") and c.isError()):
                 logger.error(f"커맨드8 트리거 실패: {c}")
                 return False
@@ -205,15 +224,18 @@ class MotorService:
             lo = u32_pulses & 0xFFFF
             
             # 3. 목표 위치 레지스터 (Step 2: 0x0139)에 쓰기
-            # Lo/Hi 순서로 전송 (매뉴얼 -5000 예제 기준)
-            w = self.client.write_registers(address=0x0139, values=[lo, hi]) 
+            w = self.client.write_registers(
+                address=0x0139, 
+                values=[lo, hi],
+                device_id=self.unit_id
+            )
             if (not w) or (hasattr(w, "isError") and w.isError()):
                 logger.error(f"목표 위치(0x0139)[{s32_pulses} pulses -> Lo={lo}, Hi={hi}] 쓰기 실패: {w}")
                 return False
 
             # 4. 절대 위치 이동 트리거 (Step 3: 0x0143에 '1')
             logger.info(f"[모터] 절대 이동 명령(1) -> {s32_pulses} pulses (Speed: {speed_rps} rps)")
-            c = self.send_command(0x0143, 1) # <--- 1 = Absolute running (매뉴얼 확인)
+            c = self.send_command(0x0143, 1)
             if (not c) or (hasattr(c, "isError") and c.isError()):
                 logger.error(f"절대 이동 트리거(1) 실패: {c}")
                 return False
