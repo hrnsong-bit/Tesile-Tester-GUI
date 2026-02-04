@@ -81,8 +81,12 @@ class ZoomableCanvas(FigureCanvas):
 class TabDICUTM(QWidget):
     """SS Curve Generator Tab"""
     
-    def __init__(self):
+    def __init__(self, lang_manager=None):
         super().__init__()
+        
+        # ===== LanguageManager 저장 =====
+        self.lang_manager = lang_manager
+        
         f = font_big()
         self.udf = None
         self.ddf = None
@@ -91,9 +95,9 @@ class TabDICUTM(QWidget):
         self._pan_info = {}
 
         # ===== Control Panel =====
-        ctrl = QGroupBox("Load · Settings")
-        ctrl.setFont(f)
-        gl = QVBoxLayout(ctrl)
+        self.ctrl = QGroupBox("Load · Settings")
+        self.ctrl.setFont(f)
+        gl = QVBoxLayout(self.ctrl)
 
         # UTM 파일
         utm_row = QHBoxLayout()
@@ -149,7 +153,7 @@ class TabDICUTM(QWidget):
         # Geometry
         geom_row = QHBoxLayout()
         geom_row.addWidget(QLabel("Geometry:"))
-        self.geom = GeometryInput()
+        self.geom = GeometryInput(lang_manager=lang_manager)
         geom_row.addWidget(self.geom, 1)
         gl.addLayout(geom_row)
 
@@ -176,9 +180,9 @@ class TabDICUTM(QWidget):
         gl.addLayout(btn_row)
 
         # Results
-        res = QGroupBox("Results")
-        res.setFont(f)
-        h = QHBoxLayout(res)
+        self.res = QGroupBox("Results")
+        self.res.setFont(f)
+        h = QHBoxLayout(self.res)
         self.lbl_uts = QLabel("UTS: - (MPa) | YS: - (MPa)")
         h.addWidget(self.lbl_uts)
         h.addStretch(1)
@@ -204,8 +208,8 @@ class TabDICUTM(QWidget):
         top_v = QVBoxLayout(top)
         top_v.setContentsMargins(0, 0, 0, 0)
         top_v.setSpacing(8)
-        top_v.addWidget(ctrl)
-        top_v.addWidget(res)
+        top_v.addWidget(self.ctrl)
+        top_v.addWidget(self.res)
 
         self.splitter = QSplitter(Qt.Vertical)
         self.splitter.addWidget(top)
@@ -218,8 +222,8 @@ class TabDICUTM(QWidget):
         root.setSpacing(8)
         root.addWidget(self.splitter)
         
-        ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        res.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.res.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         top.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
 
     def _on_mouse_press(self, event):
@@ -520,3 +524,33 @@ class TabDICUTM(QWidget):
             )
         except Exception as e:
             QMessageBox.warning(self, "Save Error", f"Failed to save graph:\n{e}")
+            
+    def retranslate(self):
+        """UI 텍스트 번역 업데이트"""
+        if not self.lang_manager:
+            return
+        
+        tr = self.lang_manager.translate
+        
+        # 그룹박스
+        self.ctrl.setTitle(tr("data.load_settings"))
+        self.res.setTitle(tr("data.results"))
+        
+        # 버튼
+        self.btn_utm.setText(tr("data.load_utm"))
+        self.btn_dic.setText(tr("data.load_dic"))
+        self.btn_plot.setText(tr("data.generate_curve"))
+        self.btn_save.setText(tr("data.save_csv"))
+        self.btn_save_img.setText(tr("data.save_graph"))
+        
+        # 라벨
+        self.lbl_utm.setText(tr("data.file") + " -")
+        self.lbl_dic.setText(tr("data.file") + " -")
+        self.lbl_uts.setText(tr("data.uts"))
+        
+        # 체크박스
+        self.chk_yield.setText(tr("data.calc_yield"))
+        
+        # GeometryInput 재번역
+        if hasattr(self, 'geom'):
+            self.geom.retranslate()

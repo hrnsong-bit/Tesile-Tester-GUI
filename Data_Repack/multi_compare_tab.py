@@ -31,24 +31,22 @@ class TabMultiCompare(QWidget):
     
     SK_COLORS = SK_MULTI
     
-    def __init__(self):
+    def __init__(self, lang_manager=None):
         super().__init__()
+
+        # ===== LanguageManager 저장 =====
+        self.lang_manager = lang_manager
 
         f = font_big()
         self.utm_files = []
         self.dic_files = []
         self.pairs = []
         self.datasets = []
-        self.selector = None
-        self.span = None
-        self.vlines = []
-        self.ax_info = None
-        self._pan_info = {}
 
         # ===== Control Panel =====
-        ctrl = QGroupBox("Multi compare · Load & Settings")
-        ctrl.setFont(f)
-        gl = QVBoxLayout(ctrl)
+        self.ctrl = QGroupBox("Multi compare · Load & Settings")
+        self.ctrl.setFont(f)
+        gl = QVBoxLayout(self.ctrl)
 
         # Load buttons
         load_row = QHBoxLayout()
@@ -62,8 +60,8 @@ class TabMultiCompare(QWidget):
         gl.addLayout(load_row)
         
         # Pair list label
-        pair_label = QLabel("Pairs (label = auto-extracted):")
-        gl.addWidget(pair_label)
+        self.pair_list_label = QLabel("Pairs (label = auto-extracted):")  # ← 저장
+        gl.addWidget(self.pair_list_label)
 
         # Edit buttons
         edit_btn_layout = QHBoxLayout()
@@ -95,7 +93,8 @@ class TabMultiCompare(QWidget):
 
         # Tolerance settings
         tol_row = QHBoxLayout()
-        tol_row.addWidget(QLabel("Default merge tol (s):"))
+        self.default_tol_label = QLabel("Default merge tol (s):")  # ← 저장
+        tol_row.addWidget(self.default_tol_label)
         self.tol_default = QDoubleSpinBox()
         self.tol_default.setDecimals(3)
         self.tol_default.setSingleStep(0.005)
@@ -104,7 +103,8 @@ class TabMultiCompare(QWidget):
         self.tol_default.setFont(f)
         tol_row.addWidget(self.tol_default)
 
-        tol_row.addWidget(QLabel("Per-curve tol (s):"))
+        self.per_curve_tol_label = QLabel("Per-curve tol (s):")  # ← 저장
+        tol_row.addWidget(self.per_curve_tol_label)
         self.tol_pair = QDoubleSpinBox()
         self.tol_pair.setDecimals(3)
         self.tol_pair.setSingleStep(0.005)
@@ -118,14 +118,16 @@ class TabMultiCompare(QWidget):
 
         # Geometry
         geom_row = QHBoxLayout()
-        geom_row.addWidget(QLabel("Geometry:"))
-        self.geom = GeometryInput()
+        self.geometry_label = QLabel("Geometry:")  # ← 저장
+        geom_row.addWidget(self.geometry_label)
+        self.geom = GeometryInput(lang_manager=lang_manager)
         geom_row.addWidget(self.geom, 1)
         gl.addLayout(geom_row)
 
         # Manual fit range
         fit_row = QHBoxLayout()
-        fit_row.addWidget(QLabel("Manual fit range (%):"))
+        self.fit_range_label = QLabel("Manual fit range (%):")  # ← 저장
+        fit_row.addWidget(self.fit_range_label)
         self.start_box = QDoubleSpinBox()
         self.start_box.setDecimals(4)
         self.start_box.setRange(0.0, 100.0)
@@ -189,6 +191,24 @@ class TabMultiCompare(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
         root.addWidget(self.splitter)
+
+        # ===== 추가 변수 초기화 =====
+        self.selector = None
+        self.span = None
+        self.vlines = []
+        self.ax_info = None
+        self._pan_info = {}
+        self.selected_range = None
+
+    def _on_pair_selected(self, row):
+        """리스트에서 Pair 선택 시"""
+        if 0 <= row < len(self.pairs):
+            self.tol_pair.blockSignals(True)
+            self.tol_pair.setEnabled(True)
+            self.tol_pair.setValue(float(self.pairs[row]["tol"]))
+            self.tol_pair.blockSignals(False)
+        else:
+            self.tol_pair.setEnabled(False)
 
     def _on_mouse_press(self, event):
         """우클릭으로 Pan 시작"""
@@ -296,9 +316,11 @@ class TabMultiCompare(QWidget):
 
     def _add_single_pair(self):
         """하나의 UTM + DIC 파일 쌍을 수동으로 추가"""
+        tr = self.lang_manager.translate if self.lang_manager else lambda x: x
+        
         utm_file, _ = QFileDialog.getOpenFileName(
             self, 
-            "Select UTM CSV", 
+            tr("data.select_utm"),  # ← 번역 키 추가 필요
             "", 
             "CSV Files (*.csv);;All Files (*)"
         )
@@ -307,20 +329,20 @@ class TabMultiCompare(QWidget):
         
         dic_file, _ = QFileDialog.getOpenFileName(
             self, 
-            "Select DIC CSV", 
+            tr("data.select_dic"),  # ← 번역 키 추가 필요
             "", 
             "CSV Files (*.csv);;All Files (*)"
         )
         if not dic_file:
-            QMessageBox.information(self, "Cancelled", "DIC file selection cancelled.")
+            QMessageBox.information(self, tr("msg.cancelled"), tr("msg.dic_cancelled"))
             return
         
         # 동일 파일 방지
         if utm_file == dic_file:
             QMessageBox.warning(
                 self,
-                "Invalid Selection",
-                "UTM and DIC files must be different!"
+                tr("msg.invalid_selection"),
+                tr("msg.files_must_different")
             )
             return
         
@@ -331,8 +353,8 @@ class TabMultiCompare(QWidget):
         if utm_stem == dic_stem:
             reply = QMessageBox.question(
                 self,
-                "Same Filename Warning",
-                f"UTM and DIC have identical filenames:\n'{utm_stem}'\n\nContinue anyway?",
+                tr("msg.same_filename_warning"),
+                tr("msg.same_filename_desc").format(utm_stem),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -344,8 +366,8 @@ class TabMultiCompare(QWidget):
         
         label, ok = QInputDialog.getText(
             self, 
-            "Enter Pair Label", 
-            "Label for this pair:", 
+            tr("data.enter_pair_label"),
+            tr("data.label_for_pair"),
             text=default_label
         )
         
@@ -357,8 +379,8 @@ class TabMultiCompare(QWidget):
             if label in existing_labels:
                 QMessageBox.warning(
                     self,
-                    "Duplicate Label",
-                    f"Label '{label}' already exists. Auto-incrementing."
+                    tr("msg.duplicate_label"),
+                    tr("msg.duplicate_label_desc").format(label)
                 )
                 label = self._ensure_unique_label(label)
         
@@ -380,23 +402,29 @@ class TabMultiCompare(QWidget):
         
         QMessageBox.information(
             self, 
-            "Pair Added", 
-            f"Added:\n  {label}\n  UTM: {os.path.basename(utm_file)}\n  DIC: {os.path.basename(dic_file)}"
+            tr("msg.pair_added"),
+            tr("msg.pair_added_desc").format(
+                label, 
+                os.path.basename(utm_file), 
+                os.path.basename(dic_file)
+            )
         )
-
+   
     def _edit_selected_label(self):
         """선택된 Pair의 라벨 수정"""
+        tr = self.lang_manager.translate if self.lang_manager else lambda x: x
+        
         row = self.list_pairs.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a pair.")
+            QMessageBox.warning(self, tr("msg.no_selection"), tr("msg.select_pair"))
             return
         
         if 0 <= row < len(self.pairs):
             current_label = self.pairs[row]["label"]
             new_label, ok = QInputDialog.getText(
                 self, 
-                "Edit Pair Label", 
-                "Enter new label:", 
+                tr("data.edit_label"),
+                tr("data.enter_new_label"),
                 text=current_label
             )
             
@@ -409,20 +437,22 @@ class TabMultiCompare(QWidget):
                 if final_label in existing_labels:
                     QMessageBox.warning(
                         self,
-                        "Duplicate Label",
-                        f"Label '{final_label}' exists. Choose different name."
+                        tr("msg.duplicate_label"),
+                        tr("msg.choose_different_name")
                     )
                     return
                 
                 self.pairs[row]["label"] = final_label
                 self._refresh_pair_list()
                 self.list_pairs.setCurrentRow(row)
-
+    
     def _remove_selected_pair(self):
         """선택된 Pair 삭제"""
+        tr = self.lang_manager.translate if self.lang_manager else lambda x: x
+        
         row = self.list_pairs.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a pair.")
+            QMessageBox.warning(self, tr("msg.no_selection"), tr("msg.select_pair"))
             return
 
         if 0 <= row < len(self.pairs):
@@ -435,13 +465,19 @@ class TabMultiCompare(QWidget):
                 new_row = min(row, new_count - 1)
                 self.list_pairs.setCurrentRow(new_row)
             
-            QMessageBox.information(self, "Pair Removed", f"Removed: {removed_pair['label']}")
+            QMessageBox.information(
+                self, 
+                tr("msg.pair_removed"),
+                tr("msg.pair_removed_desc").format(removed_pair['label'])
+            )
 
     def load_multiple_sets(self):
         """여러 UTM+DIC 파일을 한 번에 로드"""
+        tr = self.lang_manager.translate if self.lang_manager else lambda x: x
+        
         utm_files, _ = QFileDialog.getOpenFileNames(
             self, 
-            "Select multiple UTM CSVs", 
+            tr("data.select_multiple_utm"),
             "", 
             "CSV (*.csv)"
         )
@@ -450,12 +486,12 @@ class TabMultiCompare(QWidget):
         
         dic_files, _ = QFileDialog.getOpenFileNames(
             self, 
-            "Select multiple DIC CSVs", 
+            tr("data.select_multiple_dic"),
             "", 
             "CSV (*.csv)"
         )
         if not dic_files:
-            QMessageBox.information(self, "Info", "DIC selection cancelled.")
+            QMessageBox.information(self, tr("msg.info"), tr("msg.dic_cancelled"))
             return
         
         self.utm_files = sorted(utm_files)
@@ -476,12 +512,12 @@ class TabMultiCompare(QWidget):
         if invalid_count > 0:
             QMessageBox.warning(
                 self,
-                "Invalid Pairs Detected",
-                f"Skipped {invalid_count} pair(s) where files were identical."
+                tr("msg.invalid_pairs"),
+                tr("msg.invalid_pairs_desc").format(invalid_count)
             )
         
         if not valid_pairs:
-            QMessageBox.warning(self, "No Valid Pairs", "No valid pairs found.")
+            QMessageBox.warning(self, tr("msg.no_valid_pairs"), tr("msg.no_valid_pairs_found"))
             return
         
         # 중복 라벨 방지
@@ -499,29 +535,72 @@ class TabMultiCompare(QWidget):
         if self.pairs:
             self.list_pairs.setCurrentRow(0)
         
-        QMessageBox.information(self, "Load Complete", f"Loaded {len(self.pairs)} pair(s).")
+        QMessageBox.information(
+            self, 
+            tr("msg.load_complete"),
+            tr("msg.pairs_loaded").format(len(self.pairs))
+        )
 
     def _refresh_pair_list(self):
         """Pair 리스트 UI 갱신"""
+        tr = self.lang_manager.translate if self.lang_manager else lambda x: x
+        
         self.list_pairs.clear()
         for i, p in enumerate(self.pairs, 1):
-            self.list_pairs.addItem(
-                f"{i:02d}. {p['label']} | tol={p['tol']:.3f}s"
+            # ===== 번역된 형식 사용 =====
+            item_text = tr("data.pair_item_format").format(
+                i, 
+                p['label'], 
+                p['tol']
             )
+            self.list_pairs.addItem(item_text)
+        
         self.lbl_summary.setText(
-            f"UTM: {len(self.utm_files)}, DIC: {len(self.dic_files)}, Pairs: {len(self.pairs)}"
+            tr("data.summary_format").format(
+                len(self.utm_files), 
+                len(self.dic_files), 
+                len(self.pairs)
+            )
         )
         self.tol_pair.setEnabled(False)
 
-    def _on_pair_selected(self, row):
-        """리스트에서 Pair 선택 시"""
-        if 0 <= row < len(self.pairs):
-            self.tol_pair.blockSignals(True)
-            self.tol_pair.setEnabled(True)
-            self.tol_pair.setValue(float(self.pairs[row]["tol"]))
-            self.tol_pair.blockSignals(False)
-        else:
-            self.tol_pair.setEnabled(False)
+    def _render_info_panel(self, rows):
+        """사이드 패널 정보 표시"""
+        tr = self.lang_manager.translate if self.lang_manager else lambda x: x
+        
+        self._ensure_side_panel(self.canvas.figure)
+        ax = self.ax_info
+
+        ax.clear()
+        ax.set_title(tr("data.properties"), color="black", fontsize=13, fontweight="bold")
+
+        y = 0.92
+        for row_data in rows:
+            label, color, E_mpa, uts = row_data[:4]
+            ys_val = row_data[4] if len(row_data) > 4 else None
+
+            # ===== 번역 적용 =====
+            if E_mpa is None or not np.isfinite(E_mpa):
+                e_txt = tr("data.e_value_na")
+            else:
+                e_txt = tr("data.e_value").format(E_mpa / 1000.0)
+            
+            u_txt = tr("data.uts_value").format(uts)
+            
+            if ys_val:
+                y_txt = tr("data.ys_value").format(ys_val)
+            else:
+                y_txt = tr("data.ys_value_na")
+            
+            info_str = f"{e_txt} | {u_txt} | {y_txt}"
+
+            ax.text(0.0, y, f"{label}", transform=ax.transAxes, ha="left", fontsize=11, color=color, fontweight="bold")
+            ax.text(0.0, y - 0.055, info_str, transform=ax.transAxes, ha="left", fontsize=10.5, color="#333")
+            y -= 0.13
+
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        self.canvas.draw_idle()
 
     def _update_selected_pair_tol(self, val):
         """선택된 Pair의 tolerance 값 업데이트"""
@@ -744,32 +823,6 @@ class TabMultiCompare(QWidget):
         if self.datasets: 
             self._init_span_selector(ax)
 
-    def _render_info_panel(self, rows):
-        """사이드 패널 정보 표시"""
-        self._ensure_side_panel(self.canvas.figure)
-        ax = self.ax_info
-
-        ax.clear()
-        ax.set_title("Properties", color="black", fontsize=13, fontweight="bold")
-
-        y = 0.92
-        for row_data in rows:
-            label, color, E_mpa, uts = row_data[:4]
-            ys_val = row_data[4] if len(row_data) > 4 else None
-
-            e_txt = "E=–" if (E_mpa is None or not np.isfinite(E_mpa)) else f"E={E_mpa/1000.0:.3f} GPa"
-            u_txt = f"UTS={uts:.1f}"
-            y_txt = f"YS={ys_val:.1f}" if ys_val else "YS=–"
-            info_str = f"{e_txt} | {u_txt} | {y_txt} MPa"
-
-            ax.text(0.0, y, f"{label}", transform=ax.transAxes, ha="left", fontsize=11, color=color, fontweight="bold")
-            ax.text(0.0, y - 0.055, info_str, transform=ax.transAxes, ha="left", fontsize=10.5, color="#333")
-            y -= 0.13
-
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        self.canvas.draw_idle()
-
     def _on_select(self, x_min, x_max):
         """SpanSelector 완료"""
         if not self.datasets or x_max <= x_min: 
@@ -830,12 +883,14 @@ class TabMultiCompare(QWidget):
 
     def save_graph(self):
         """그래프 저장"""
+        tr = self.lang_manager.translate if self.lang_manager else lambda x: x
+        
         if self.canvas.figure is None:
             return
         
         path, _ = QFileDialog.getSaveFileName(
             self, 
-            "Save Graph", 
+            tr("data.save_graph"),
             "multi_compare.png", 
             "PNG (*.png);;JPEG (*.jpg);;PDF (*.pdf)"
         )
@@ -844,6 +899,47 @@ class TabMultiCompare(QWidget):
             
         try:
             self.canvas.figure.savefig(path, dpi=300, bbox_inches='tight')
-            QMessageBox.information(self, "Saved", f"Saved:\n{os.path.basename(path)}")
+            QMessageBox.information(
+                self, 
+                tr("msg.saved"),
+                tr("msg.saved_desc").format(os.path.basename(path))
+            )
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed:\n{e}")
+            QMessageBox.warning(
+                self, 
+                tr("msg.error"),
+                tr("msg.save_failed").format(e)
+            )
+
+    def retranslate(self):
+        """UI 텍스트 번역 업데이트"""
+        if not self.lang_manager:
+            return
+        
+        tr = self.lang_manager.translate
+        
+        # 그룹박스
+        self.ctrl.setTitle(tr("data.multi_compare"))
+        
+        # 버튼
+        self.btn_load_multi.setText(tr("data.load_multiple"))
+        self.btn_add_single.setText(tr("data.add_pair"))
+        self.btn_edit_label.setText(tr("data.edit_label"))
+        self.btn_remove_pair.setText(tr("data.remove_pair"))
+        self.btn_plot.setText(tr("data.generate_multi"))
+        self.btn_save_img_multi.setText(tr("data.save_graph"))
+        self.btn_manual_fit.setText(tr("data.fit_by_range"))
+        
+        # 라벨
+        self.pair_list_label.setText(tr("data.pairs_label"))
+        self.default_tol_label.setText(tr("data.default_tol"))
+        self.per_curve_tol_label.setText(tr("data.per_curve_tol"))
+        self.geometry_label.setText(tr("data.geometry"))
+        self.fit_range_label.setText(tr("data.manual_fit"))
+        
+        # GeometryInput 재번역
+        if hasattr(self, 'geom'):
+            self.geom.retranslate()
+        
+        # Pair 리스트 재표시
+        self._refresh_pair_list()

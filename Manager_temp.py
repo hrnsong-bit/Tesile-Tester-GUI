@@ -1,7 +1,9 @@
+# Manager_temp.py
 from Controller_temp import TempController
 from Monitor_temp import TempMonitor
 from Temp_Stabilization import TempStabilizationDetector
-from config import temp_cfg, monitor_cfg  # ===== 추가 =====
+from config import temp_cfg, monitor_cfg
+from ErrorHandler import ErrorHandler  # ← 추가
 import logging
 import time
 
@@ -78,6 +80,10 @@ class TempManager:
         
         logger.info("Temp Service Stopped")
 
+    def is_connected(self):
+        """연결 상태 확인"""
+        return self.controller is not None
+
     def update_all(self, temps: list):
         """모니터링 데이터 업데이트"""
         if self.control_active and self.control_start_time is not None:
@@ -116,14 +122,8 @@ class TempManager:
         logger.info("=" * 60)
         logger.info("[start_control] 온도 제어 시작")
         
-        if not self.controller:
-            logger.error("[start_control] TempController가 None입니다.")
-            from PyQt5 import QtWidgets
-            QtWidgets.QMessageBox.warning(
-                None,
-                "연결 오류",
-                "온도 제어기가 연결되지 않았습니다."
-            )
+        if not self.is_connected():
+            ErrorHandler.show_not_connected_error("Temp Controller", self.ui)
             return False
         
         try:
@@ -141,8 +141,7 @@ class TempManager:
                 except Exception as e:
                     logger.error(f"그래프 초기화 실패: {e}")
             
-            # ===== 수정: 매직 넘버 → config =====
-            ch = temp_cfg.DEFAULT_CONTROL_CHANNEL  # ← 1 대신
+            ch = temp_cfg.DEFAULT_CONTROL_CHANNEL
             
             # Modbus 명령 전송
             result_sv = self.controller.set_sv(ch, sv)
@@ -170,35 +169,36 @@ class TempManager:
                 result_run is not None
             ])
             
-            from PyQt5 import QtWidgets
-            
-            # ===== 수정: 매직 넘버 → config (판단 기준) =====
-            MIN_SUCCESS_COUNT = 2  # 최소 성공 명령 개수
-            
             if success_count >= temp_cfg.CONTROL_MIN_SUCCESS_COUNT:
                 self.control_start_time = time.time()
                 self.control_active = True
                 logger.info(f"[start_control] ✓ 제어 시작 완료")
                 
-                QtWidgets.QMessageBox.information(
-                    None,
-                    "제어 시작",
-                    f"CH{ch} 온도 제어 시작\n\n"
-                    f"목표 온도: {sv}°C\n"
-                    f"오토튜닝: {'실행' if at_execute else '정지'}"
+                # ===== 번역 지원 메시지 =====
+                title = ErrorHandler._translate("temp.control_started")
+                message = ErrorHandler._translate("temp.control_started_desc").format(
+                    ch, sv, ErrorHandler._translate("temp.at_running" if at_execute else "temp.at_stopped")
                 )
+                ErrorHandler.show_info(title, message, self.ui)
                 return True
             else:
                 logger.error("[start_control] ✗ 제어 시작 실패")
-                QtWidgets.QMessageBox.critical(
-                    None,
-                    "제어 실패",
-                    "온도 제어 시작 실패"
+                
+                # ===== 번역 지원 에러 메시지 =====
+                ErrorHandler.show_error(
+                    ErrorHandler._translate("temp.control_failed"),
+                    ErrorHandler._translate("temp.control_failed_desc"),
+                    self.ui
                 )
                 return False
                 
         except Exception as e:
             logger.error(f"[start_control] 예외: {e}", exc_info=True)
+            ErrorHandler.show_error(
+                ErrorHandler._translate("error.input_error"),
+                str(e),
+                self.ui
+            )
             return False
         
         finally:
@@ -214,8 +214,7 @@ class TempManager:
             return False
         
         try:
-            # ===== 수정: 매직 넘버 → config =====
-            ch = temp_cfg.DEFAULT_CONTROL_CHANNEL  # ← 1 대신
+            ch = temp_cfg.DEFAULT_CONTROL_CHANNEL
             
             result = self.controller.set_run_stop(ch, run=False)
             
@@ -233,11 +232,11 @@ class TempManager:
                     except Exception as e:
                         logger.error(f"그래프 초기화 실패: {e}")
                 
-                from PyQt5 import QtWidgets
-                QtWidgets.QMessageBox.information(
-                    None,
-                    "제어 정지",
-                    "온도 제어가 정지되었습니다."
+                # ===== 번역 지원 메시지 =====
+                ErrorHandler.show_info(
+                    ErrorHandler._translate("temp.control_stopped"),
+                    ErrorHandler._translate("temp.control_stopped_desc"),
+                    self.ui
                 )
                 return True
             else:
@@ -253,13 +252,11 @@ class TempManager:
     
     def _on_stabilization_achieved(self, target: float, tolerance: float, duration_min: float):
         """안정화 완료 시 호출"""
-        from PyQt5 import QtWidgets
-        
-        msg = (
-            f"🎯 온도 안정화 완료!\n\n"
-            f"목표: {target:.1f}°C ±{tolerance:.1f}°C\n"
-            f"유지: {duration_min:.1f}분"
+        # ===== 번역 지원 메시지 =====
+        title = ErrorHandler._translate("temp.stabilization_complete")
+        message = ErrorHandler._translate("temp.stabilization_complete_desc").format(
+            target, tolerance, duration_min
         )
         
-        QtWidgets.QMessageBox.information(None, "안정화 완료", msg)
+        ErrorHandler.show_info(title, message, self.ui)
         logger.info(f"[Stabilization] 알림 표시 완료")

@@ -167,3 +167,39 @@ class SettingsManager:
         """설정을 디스크에 즉시 저장"""
         self.settings.sync()
         logger.debug("설정 파일 동기화 완료")
+        
+    def save_font_size(self, size: int):
+        """폰트 크기 저장"""
+        try:
+            self.settings.setValue("ui/font_size", size)
+            self.settings.sync()
+            logger.debug(f"폰트 크기 저장: {size}pt")
+        except Exception as e:
+            logger.error(f"폰트 크기 저장 실패: {e}")
+
+    def load_font_size(self) -> int:
+        """폰트 크기 불러오기"""
+        try:
+            size = self.settings.value("ui/font_size", 12, type=int)
+            logger.debug(f"폰트 크기 불러오기: {size}pt")
+            return size
+        except Exception as e:
+            logger.error(f"폰트 크기 불러오기 실패: {e}")
+            return 12  # 기본값
+        
+    def save_language(self, lang_code: str):
+        """언어 설정 저장"""
+        try:
+            self.settings.setValue("language", lang_code)
+            logger.info(f"언어 설정 저장: {lang_code}")
+        except Exception as e:
+            logger.error(f"언어 설정 저장 실패: {e}")
+
+    def load_language(self) -> str:
+        """저장된 언어 설정 불러오기"""
+        try:
+            lang = self.settings.value("language", "en", type=str)
+            return lang
+        except Exception as e:
+            logger.error(f"언어 설정 불러오기 실패: {e}")
+            return "en"

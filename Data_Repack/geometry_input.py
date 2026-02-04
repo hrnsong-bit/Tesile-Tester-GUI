@@ -15,8 +15,12 @@ from .utils import font_big, PRESET_FILE
 class GeometryInput(QWidget):
     """시편 치수 입력 위젯"""
     
-    def __init__(self, w="3.8", t="0.08", L0="50"):
+    def __init__(self, w="3.8", t="0.08", L0="50", lang_manager=None):
         super().__init__()
+        
+        # ===== LanguageManager 저장 =====
+        self.lang_manager = lang_manager
+        
         f = font_big()
         self.presets = {}
 
@@ -32,19 +36,26 @@ class GeometryInput(QWidget):
         self.L0.setFont(f)
         self.L0.setFixedWidth(80)
         
+        # 라벨들을 인스턴스 변수로 저장
+        self.width_label = QLabel("Width [mm]")
+        self.thickness_label = QLabel("Thickness [mm]")
+        self.gauge_label = QLabel("Gauge [mm]")
+        
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(10)
-        row.addWidget(QLabel("Width [mm]"))
+        row.addWidget(self.width_label)
         row.addWidget(self.w)
-        row.addWidget(QLabel("Thickness [mm]"))
+        row.addWidget(self.thickness_label)
         row.addWidget(self.t)
-        row.addWidget(QLabel("Gauge [mm]"))
+        row.addWidget(self.gauge_label)
         row.addWidget(self.L0)
         row.addStretch(1)
 
         preset_row = QHBoxLayout()
         preset_row.setContentsMargins(0, 5, 0, 0)
+        
+        self.preset_label = QLabel("Preset:")
         
         self.cmb_presets = QComboBox()
         self.cmb_presets.setFont(f)
@@ -55,7 +66,7 @@ class GeometryInput(QWidget):
         self.btn_del_preset = QPushButton("Del")
         self.btn_del_preset.setFont(f)
         
-        preset_row.addWidget(QLabel("Preset:"))
+        preset_row.addWidget(self.preset_label)
         preset_row.addWidget(self.cmb_presets, 1)
         preset_row.addWidget(self.btn_save_preset)
         preset_row.addWidget(self.btn_del_preset)
@@ -158,3 +169,20 @@ class GeometryInput(QWidget):
                 json.dump(self.presets, f, indent=4, ensure_ascii=False)
         except Exception as e:
             QMessageBox.warning(self, "Save Error", f"프리셋 저장 실패: {e}")
+            
+    def retranslate(self):
+        """UI 텍스트 번역 업데이트"""
+        if not self.lang_manager:
+            return
+        
+        tr = self.lang_manager.translate
+        
+        # 라벨
+        self.width_label.setText(tr("data.width"))
+        self.thickness_label.setText(tr("data.thickness"))
+        self.gauge_label.setText(tr("data.gauge"))
+        self.preset_label.setText(tr("data.preset"))
+        
+        # 버튼
+        self.btn_save_preset.setText(tr("data.save_preset"))
+        self.btn_del_preset.setText(tr("data.delete_preset"))

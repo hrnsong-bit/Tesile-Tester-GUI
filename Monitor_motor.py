@@ -2,7 +2,7 @@
 import logging
 from PyQt5 import QtCore
 from pymodbus.client.serial import ModbusSerialClient
-from config import motor_cfg, monitor_cfg  # ===== 추가 =====
+from config import motor_cfg, monitor_cfg
 
 logger = logging.getLogger(__name__)
 
@@ -19,60 +19,72 @@ class MotorWorker(QtCore.QObject):
         self.client = client
         self.unit_id = unit_id
         self.interval_ms = interval_ms
+        self._running = False
         
-        # QTimer 생성
-        self.timer = QtCore.QTimer()
-        self.timer.setInterval(interval_ms)
-        self.timer.timeout.connect(self._do_work)
+        # ===== 중요: Timer는 run()에서 생성해야 함 =====
+        self.timer = None
         
         logger.info(f"MotorWorker 생성됨 (Unit ID: {unit_id}, 주기: {interval_ms} ms)")
 
     @QtCore.pyqtSlot()
     def run(self):
-        """타이머 시작"""
+        """타이머 시작 - 워커 스레드에서 실행됨"""
+        # ===== Timer를 현재 스레드(워커 스레드)에서 생성 =====
+        self.timer = QtCore.QTimer()
+        self.timer.setInterval(self.interval_ms)
+        self.timer.timeout.connect(self._do_work)
+        
+        self._running = True
         self.timer.start()
-        logger.info("Motor 모니터링 타이머 시작")
+        logger.info(f"Motor 모니터링 타이머 시작됨 (Thread ID: {int(QtCore.QThread.currentThreadId())})")
 
     def _do_work(self):
         """타이머 콜백 - 매 interval마다 호출됨"""
+        if not self._running:
+            return
+            
         try:
             if not self.client or not self.client.is_socket_open():
                 logger.debug("클라이언트 연결 없음 (스킵)")
                 return
 
-            # ===== 수정: 매직 넘버 → config =====
+            # 위치 레지스터 읽기
             result_pos = self.client.read_holding_registers(
-                address=motor_cfg.REG_POSITION_HI,  # ← 117 대신
+                address=motor_cfg.REG_POSITION_HI,
                 count=2,
                 device_id=self.unit_id
             )
-            regs = getattr(result_pos, "registers", None)
-
-            if result_pos.isError() or regs is None or len(regs) != 2:
+            
+            if result_pos.isError():
                 logger.debug(f"현재 위치 읽기 실패: {result_pos}")
                 return
+                
+            regs = getattr(result_pos, "registers", None)
+            if regs is None or len(regs) != 2:
+                logger.debug(f"레지스터 데이터 없음: {regs}")
+                return
 
-            # ===== 수정: 매직 넘버 → config =====
+            # 32비트 위치 값 조합
             reg126, reg127 = regs
-            r126_hi = (reg126 >> motor_cfg.BYTE_SHIFT) & motor_cfg.BYTE_MASK_LO  # ← 8, 0xFF 대신
-            r126_lo =  reg126 & motor_cfg.BYTE_MASK_LO
+            r126_hi = (reg126 >> motor_cfg.BYTE_SHIFT) & motor_cfg.BYTE_MASK_LO
+            r126_lo = reg126 & motor_cfg.BYTE_MASK_LO
             r127_hi = (reg127 >> motor_cfg.BYTE_SHIFT) & motor_cfg.BYTE_MASK_LO
-            r127_lo =  reg127 & motor_cfg.BYTE_MASK_LO
+            r127_lo = reg127 & motor_cfg.BYTE_MASK_LO
 
             position = ((r127_hi << 24) |
                         (r127_lo << 16) |
                         (r126_hi << motor_cfg.BYTE_SHIFT) |
                         (r126_lo))
 
-            # ===== 수정: 매직 넘버 → config =====
-            if position & motor_cfg.SINT32_SIGN_BIT:  # ← 0x80000000 대신
-                position -= motor_cfg.SINT32_OVERFLOW  # ← 0x100000000 대신
+            # 부호 있는 32비트로 변환
+            if position & motor_cfg.SINT32_SIGN_BIT:
+                position -= motor_cfg.SINT32_OVERFLOW
 
-            # ===== 수정: 매직 넘버 → config =====
+            # um로 변환
             displacement_um = (
-                motor_cfg.POSITION_SIGN_INVERT *      # ← -1.0
-                (position / motor_cfg.POSITION_SCALE_FACTOR) *  # ← 10000.0
-                motor_cfg.UM_PER_MM                   # ← 1000.0
+                motor_cfg.POSITION_SIGN_INVERT *
+                (position / motor_cfg.POSITION_SCALE_FACTOR) *
+                motor_cfg.UM_PER_MM
             )
 
             # 메인 스레드로 데이터 전송
@@ -84,13 +96,18 @@ class MotorWorker(QtCore.QObject):
     @QtCore.pyqtSlot()
     def stop(self):
         """타이머 정지"""
-        if self.timer.isActive():
+        self._running = False
+        if self.timer and self.timer.isActive():
             self.timer.stop()
             logger.info("Motor 모니터링 타이머 정지")
 
     @QtCore.pyqtSlot(int)
     def set_interval(self, interval_ms: int):
         """타이머 주기 변경"""
+        if not self.timer:
+            logger.warning("Timer가 아직 생성되지 않았습니다.")
+            return
+            
         was_active = self.timer.isActive()
         
         if was_active:
@@ -116,13 +133,19 @@ class MotorMonitor(QtCore.QObject):
     def __init__(self, client: ModbusSerialClient, update_callback, interval_ms=100, unit_id=1):
         super().__init__()
         
-        # 스레드와 워커 생성
+        # 스레드 생성 및 시작
         self.thread = QtCore.QThread()
+        self.thread.start()
+        
+        # 워커 생성 (메인 스레드에서)
         self.worker = MotorWorker(client, unit_id, interval_ms)
 
-        # 워커를 스레드로 이동
+        # 워커를 워커 스레드로 이동
         self.worker.moveToThread(self.thread)
 
+        # ===== 중요: 스레드의 started 시그널에 연결 =====
+        self.thread.started.connect(self.worker.run)
+        
         # 시그널 연결
         self.start_worker.connect(self.worker.run)
         self.stop_worker.connect(self.worker.stop)
@@ -133,11 +156,7 @@ class MotorMonitor(QtCore.QObject):
         self.thread.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
 
-        # 스레드 시작
-        self.thread.start()
-        self.start_worker.emit()
-
-        logger.info(f"MotorMonitor 시작됨 (스레드 ID: {int(self.thread.currentThreadId())})")
+        logger.info(f"MotorMonitor 시작됨 (Main Thread ID: {int(QtCore.QThread.currentThreadId())})")
 
     def stop(self):
         """스레드를 안전하게 종료"""
@@ -148,11 +167,13 @@ class MotorMonitor(QtCore.QObject):
                 # 1. 워커의 타이머 정지
                 self.stop_worker.emit()
                 
-                # 2. 스레드의 이벤트 루프 종료
+                # 2. 약간의 대기
+                QtCore.QThread.msleep(100)
+                
+                # 3. 스레드의 이벤트 루프 종료
                 self.thread.quit()
                 
-                # ===== 수정: 매직 넘버 → config =====
-                if not self.thread.wait(monitor_cfg.THREAD_WAIT_TIMEOUT_MS):  # ← 2000 대신
+                if not self.thread.wait(monitor_cfg.THREAD_WAIT_TIMEOUT_MS):
                     logger.warning("Motor 스레드가 정상 종료되지 않았습니다. 강제 종료합니다.")
                     self.thread.terminate()
                     self.thread.wait()

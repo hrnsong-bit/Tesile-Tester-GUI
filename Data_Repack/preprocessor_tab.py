@@ -24,8 +24,11 @@ from .utils import safe_read_csv, font_big, font_small, SK_GRAY, SK_ORANGE, SK_B
 class TabPreprocessor(QWidget):
     """CSV Preprocessor Tab"""
     
-    def __init__(self):
+    def __init__(self, lang_manager=None):
         super().__init__()
+        
+        # ===== LanguageManager 저장 =====
+        self.lang_manager = lang_manager
         
         f = font_big()
         self.df_original = None
@@ -40,9 +43,9 @@ class TabPreprocessor(QWidget):
         self._click_info = {}
 
         # ===== Control Panel =====
-        ctrl = QGroupBox("CSV Preprocessor")
-        ctrl.setFont(f)
-        gl = QVBoxLayout(ctrl)
+        self.ctrl = QGroupBox("CSV Preprocessor")
+        self.ctrl.setFont(f)
+        gl = QVBoxLayout(self.ctrl)
 
         # 파일 로드
         file_row = QHBoxLayout()
@@ -122,7 +125,7 @@ class TabPreprocessor(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
-        root.addWidget(ctrl, stretch=0)
+        root.addWidget(self.ctrl, stretch=0)
         root.addWidget(self.toolbar, stretch=0)
         root.addWidget(self.canvas, stretch=1)
 
@@ -459,3 +462,26 @@ class TabPreprocessor(QWidget):
             "Saved", 
             f"Processed CSV saved to:\n{path}"
         )
+    
+    def retranslate(self):
+        """UI 텍스트 번역 업데이트"""
+        if not self.lang_manager:
+            return
+        
+        tr = self.lang_manager.translate
+        
+        # 그룹박스
+        self.ctrl.setTitle(tr("data.preprocessor"))
+        
+        # 버튼
+        self.btn.setText(tr("data.load_csv"))
+        self.btn_set_start.setText(tr("data.set_start"))
+        self.btn_reset.setText(tr("data.reset_data"))
+        self.btn_del_in.setText(tr("data.delete_inside"))
+        self.btn_del_out.setText(tr("data.delete_outside"))
+        self.btn_export.setText(tr("data.export"))
+        
+        # 라벨
+        self.lbl.setText(tr("data.file") + " -")
+        self.x_col_label.setText(tr("data.x_column"))
+        self.y_col_label.setText(tr("data.y_column"))

@@ -1,9 +1,11 @@
+# Plot_Service.py
+
 from PyQt5 import QtCore, QtWidgets
 import pyqtgraph as pg
 from interfaces import IDataReceiver
 import csv
 import logging
-from config import monitor_cfg  # ===== 추가 =====
+from config import monitor_cfg
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ class PlotService(IDataReceiver):
         self.x_data = []
         self.y_data = []
         
-        # ===== 추가: 최대 포인트 수 (config에서 로드) =====
+        # 최대 포인트 수 (config에서 로드)
         self.max_plot_points = monitor_cfg.MAX_PLOT_POINTS
         
         # 시간 측정기
@@ -63,8 +65,11 @@ class PlotService(IDataReceiver):
         self._temp_initialized = False
         self.channel_visible = [True, True, True, True]
         
-        # ===== 추가: 뷰 모드 =====
+        # 뷰 모드
         self.temp_view_mode = 'unified'  # 'unified' or 'split'
+        
+        # ===== 변경: 자동 범위 조정 플래그 =====
+        self.temp_auto_range_enabled = True  # True면 자동 스크롤, False면 사용자 조작
         
         self._setup_plot()
         logger.info("PlotService 초기화 완료")
@@ -100,7 +105,7 @@ class PlotService(IDataReceiver):
         try:
             elapsed_sec = self.start_time.elapsed() / 1000.0
             
-            # ===== 메모리 누수 방지 =====
+            # 메모리 누수 방지
             if len(self.x_data) >= monitor_cfg.MAX_PLOT_POINTS:
                 self.x_data.pop(0)
                 self.y_data.pop(0)
@@ -137,7 +142,7 @@ class PlotService(IDataReceiver):
                 return
         
         try:
-            # ===== 메모리 누수 방지 =====
+            # 메모리 누수 방지
             if len(self.temp_x) >= monitor_cfg.MAX_PLOT_POINTS:
                 self.temp_x.pop(0)
                 for i in range(4):
@@ -151,13 +156,15 @@ class PlotService(IDataReceiver):
                 val = temps[i] if temps[i] is not None else 0.0
                 self.temp_y[i].append(val)
             
-            # ===== 뷰 모드에 따라 분기 =====
+            # 뷰 모드에 따라 분기
             if self.temp_view_mode == 'unified':
                 self._update_unified_view()
             else:  # 'split'
                 self._update_split_view()
             
-            self._update_temp_xrange(elapsed)
+            # ===== 변경: 자동 범위가 활성화된 경우에만 X축 조정 =====
+            if self.temp_auto_range_enabled:
+                self._update_temp_xrange(elapsed)
         
         except Exception as e:
             logger.error(f"온도 데이터 처리 실패: {e}", exc_info=True)
@@ -271,6 +278,23 @@ class PlotService(IDataReceiver):
             else:
                 self._update_split_view()
     
+    def set_temp_auto_range(self, enabled: bool):
+        """
+        자동 범위 조정 활성화/비활성화
+        
+        Args:
+            enabled: True면 자동 스크롤 (최근 60초), False면 사용자 마우스 조작 허용
+        """
+        self.temp_auto_range_enabled = enabled
+        
+        if enabled:
+            logger.info("온도 그래프: 자동 스크롤 활성화")
+            # 즉시 현재 시간 기준으로 범위 설정
+            if self.temp_x:
+                self._update_temp_xrange(self.temp_x[-1])
+        else:
+            logger.info("온도 그래프: 수동 모드 (마우스로 자유 조작, 우클릭 → View All)")
+    
     def init_temp_plot(self):
         """온도 그래프 초기화"""
         if self._temp_initialized:
@@ -325,9 +349,10 @@ class PlotService(IDataReceiver):
             
             self._connect_checkboxes()
             self._connect_view_mode_buttons()
+            self._connect_auto_range_checkbox()  # ===== 변경 =====
             self._temp_initialized = True
             
-            logger.info("온도 플롯 초기화 완료 (통합/분할 모두)")
+            logger.info("온도 플롯 초기화 완료")
             
         except Exception as e:
             logger.error(f"온도 플롯 초기화 실패: {e}", exc_info=True)
@@ -410,6 +435,20 @@ class PlotService(IDataReceiver):
         except Exception as e:
             logger.error(f"뷰 모드 버튼 연결 실패: {e}")
     
+    def _connect_auto_range_checkbox(self):
+        """자동 범위 체크박스 연결"""
+        if not self.ui:
+            return
+        
+        try:
+            if hasattr(self.ui, 'temp_auto_range_checkbox'):
+                self.ui.temp_auto_range_checkbox.stateChanged.connect(
+                    lambda state: self.set_temp_auto_range(state == QtCore.Qt.Checked)
+                )
+                logger.info("자동 범위 체크박스 연결 완료")
+        except Exception as e:
+            logger.error(f"자동 범위 체크박스 연결 실패: {e}")
+    
     def _on_view_mode_changed(self, mode: str):
         """뷰 모드 변경 콜백"""
         self.set_temp_view_mode(mode)
@@ -450,7 +489,9 @@ class PlotService(IDataReceiver):
             logger.error(f"채널 토글 실패: {e}")
     
     def _update_temp_xrange(self, current_time: float):
-        """X축 범위를 최근 60초로 제한"""
+        """X축 범위 업데이트 (최근 60초 자동 스크롤)"""
+        window = monitor_cfg.TEMP_PLOT_WINDOW_SEC  # 기본 60초
+        
         if self.temp_view_mode == 'unified':
             temp_widget = self.temp_plot_widget
             if not temp_widget and self.ui:
@@ -459,21 +500,21 @@ class PlotService(IDataReceiver):
             if temp_widget and len(self.temp_x) > 0:
                 plot_item = temp_widget.getPlotItem()
                 if plot_item:
-                   window = monitor_cfg.TEMP_PLOT_WINDOW_SEC
-                if current_time > window:
-                    plot_item.setXRange(current_time - window, current_time, padding=0)
-                else:
-                    plot_item.setXRange(0, max(window, current_time), padding=0)
-        else:  # split
+                    if current_time > window:
+                        plot_item.setXRange(current_time - window, current_time, padding=0)
+                    else:
+                        plot_item.setXRange(0, max(window, current_time), padding=0)
+        
+        else:  # split view
             if hasattr(self.ui, 'temp_plot_splits'):
                 for plot_widget in self.ui.temp_plot_splits:
                     if len(self.temp_x) > 0:
                         plot_item = plot_widget.getPlotItem()
                         if plot_item:
-                            if current_time > 60:
-                                plot_item.setXRange(current_time - 60, current_time, padding=0)
+                            if current_time > window:
+                                plot_item.setXRange(current_time - window, current_time, padding=0)
                             else:
-                                plot_item.setXRange(0, max(60, current_time), padding=0)
+                                plot_item.setXRange(0, max(window, current_time), padding=0)
     
     def clear_temp_plot(self):
         """온도 그래프 초기화"""

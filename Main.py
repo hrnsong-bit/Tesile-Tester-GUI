@@ -45,6 +45,9 @@ from Speed_Controller import SpeedController
 # ===== 새로 추가된 모듈 =====
 from ErrorHandler import ErrorHandler
 from Settings_Manager import SettingsManager
+from FontManager import FontManager
+from AboutDialog import AboutDialog  
+from Language_Manager import LanguageManager
 
 # ===== config.py 임포트 =====
 from config import motor_cfg, loadcell_cfg, temp_cfg, monitor_cfg, safety_cfg
@@ -67,14 +70,18 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             hz_val = self.ui.hz_spinBox.value() 
             if hz_val <= 0:
-                ErrorHandler.show_warning("입력 오류", "Frequency는 0보다 커야 합니다.", self)
+                ErrorHandler.show_warning(
+                    ErrorHandler._translate("error.input_error"),
+                    ErrorHandler._translate("msg.frequency_positive"),
+                    self
+                )
                 return
             
             # Hz를 ms로 변환하여 저장
             self.monitor_interval_ms = int(1000 / hz_val)
             logger.info(f"[HZ] Monitor interval set to {self.monitor_interval_ms} ms ({hz_val} Hz)")
 
-            # ===== 설정 저장 =====
+            # 설정 저장
             self.settings_mgr.save_monitoring_hz(hz_val)
 
             # Manager를 통해 간접 업데이트
@@ -87,15 +94,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 logger.info("[HZ] Loadcell monitor interval updated.")
 
             ErrorHandler.show_success(
-                "Frequency Set", 
-                f"모니터링 주파수가 {hz_val} Hz ({self.monitor_interval_ms} ms)로 설정되었습니다.",
+                ErrorHandler._translate("msg.frequency_set"),
+                ErrorHandler._translate("msg.frequency_set_desc").format(
+                    hz_val, self.monitor_interval_ms
+                ),
                 self
             )
 
         except Exception as e:
             logger.error(f"[HZ] Error setting frequency: {e}")
-            ErrorHandler.show_error("오류", f"주파수 설정 중 오류 발생: {e}", self)
-            
+            ErrorHandler.show_error(
+                ErrorHandler._translate("error.input_error"),
+                f"{e}",
+                self
+            )
+
     # ========================
     # 컨트롤러 슬롯
     # ========================
@@ -111,7 +124,11 @@ class MainWindow(QtWidgets.QMainWindow):
         
         except Exception as e:
             logger.error(f"[ERR] Zeroing 실패: {e}")
-            ErrorHandler.show_error("영점 설정 오류", f"Zeroing 실패: {e}", self)
+            ErrorHandler.show_error(
+                ErrorHandler._translate("msg.zeroing_error"),
+                ErrorHandler._translate("msg.zeroing_failed_desc").format(e),
+                self
+            )
 
     def on_zero_encoder_clicked(self):
         if self.motor_manager.is_connected():
@@ -135,17 +152,29 @@ class MainWindow(QtWidgets.QMainWindow):
             success = self.motor_manager.controller.move_to_absolute(target_pos, safe_speed_rps)
             
             if success:
-                ErrorHandler.show_success("Reset", "모터가 원점(0)으로 이동합니다.", self)
+                ErrorHandler.show_success(
+                    ErrorHandler._translate("msg.reset"),
+                    ErrorHandler._translate("msg.reset_desc"),
+                    self
+                )
             else:
-                ErrorHandler.show_warning("Reset", "모터 이동 명령 실패 (통신 오류)", self)
+                ErrorHandler.show_warning(
+                    ErrorHandler._translate("msg.reset"),
+                    ErrorHandler._translate("msg.move_command_failed"),
+                    self
+                )
         else:
-            ErrorHandler.show_warning("Reset", "모터가 연결되지 않아 이동은 생략합니다.", self)
+            ErrorHandler.show_warning(
+                ErrorHandler._translate("msg.reset_warning"),
+                ErrorHandler._translate("msg.reset_warning_desc"),
+                self
+            )
 
     def on_pretension_start(self):
         if not self.pretension_test or not self.motor_manager.is_connected():
             ErrorHandler.show_warning(
-                "오류", 
-                "모터가 연결되지 않았거나 Pretension 기능이 준비되지 않았습니다.",
+                ErrorHandler._translate("msg.pretension_error"),
+                ErrorHandler._translate("msg.pretension_error_desc"),
                 self
             )
             return
@@ -166,11 +195,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
+        # ===== LanguageManager 초기화 ====
+        self.language_manager = LanguageManager()
+        self.language_manager.language_changed.connect(self.on_language_changed)
+
+        # ===== ErrorHandler에 LanguageManager 연결 =====
+        ErrorHandler.set_language_manager(self.language_manager)
+
+        # ===== FontManager 초기화 =====
+        self.font_manager = FontManager(QtWidgets.QApplication.instance())
+        
         # ===== SettingsManager 초기화 =====
         self.settings_mgr = SettingsManager()
 
         # ===== 1. 의존성 없는 컴포넌트부터 생성 =====
         
+        # ===== 언어 전환 버튼 연결 =====
+        if hasattr(self.ui, 'language_toggle_btn'):
+            self.ui.language_toggle_btn.clicked.connect(self.toggle_language)
+            self._update_language_button()  # 초기 버튼 텍스트 설정
+
         # PlotService (IDataReceiver 구현체)
         try:
             self.plot_service = PlotService(
@@ -213,7 +257,13 @@ class MainWindow(QtWidgets.QMainWindow):
             plot_service=self.plot_service,
             data_handler=self.data_handler
         )
+        # ===== 메뉴 버튼 연결 =====
+        if hasattr(self.ui, 'font_menu_btn'):
+            self.ui.font_menu_btn.clicked.connect(self.show_font_menu)
         
+        if hasattr(self.ui, 'about_menu_btn'):
+            self.ui.about_menu_btn.clicked.connect(self.show_about_dialog)
+
         # ===== 온도 버튼 연결 =====
         if hasattr(self.ui, 'temp_start_btn') and hasattr(self.ui, 'temp_stop_btn'):
             try:
@@ -238,22 +288,24 @@ class MainWindow(QtWidgets.QMainWindow):
                     widget.deleteLater()
                     logger.debug("Data 탭의 placeholder 라벨 제거 완료")
         except Exception as e:
-            logger.warning(f"Data 탭 placeholder 제거 실패: {e}")
+            logger.error(f"Data 탭 서브 탭 생성 실패: {e}")
 
         try:
-            self.ss_curve_widget = TabDICUTM()
-            self.preprocessor_widget = TabPreprocessor()
-            self.multi_compare_widget = TabMultiCompare()
+            # ===== LanguageManager 전달 =====
+            self.ss_curve_widget = TabDICUTM(lang_manager=self.language_manager)
+            self.preprocessor_widget = TabPreprocessor(lang_manager=self.language_manager)
+            self.multi_compare_widget = TabMultiCompare(lang_manager=self.language_manager)
 
             self.data_sub_tabs = QtWidgets.QTabWidget()
             
-            self.data_sub_tabs.addTab(self.ss_curve_widget, "SS Curve Generator")
-            self.data_sub_tabs.addTab(self.preprocessor_widget, "CSV Preprocessor")
-            self.data_sub_tabs.addTab(self.multi_compare_widget, "Multi Compare") 
+            # 탭 제목도 번역
+            tr = self.language_manager.translate
+            self.data_sub_tabs.addTab(self.ss_curve_widget, tr("data.ss_curve"))
+            self.data_sub_tabs.addTab(self.preprocessor_widget, tr("data.preprocessor"))
+            self.data_sub_tabs.addTab(self.multi_compare_widget, tr("data.multi_compare"))
 
             self.ui.data_tab_layout.addWidget(self.data_sub_tabs)
-            
-            logger.info("Data 탭에 SS Curve Gen, CSV Preprocessor, Multi Compare 서브 탭 삽입 완료")
+                    
         except Exception as e:
             logger.error(f"Data 탭 서브 탭 생성 실패: {e}")
 
@@ -429,6 +481,204 @@ class MainWindow(QtWidgets.QMainWindow):
     
         event.accept()
 
+    def toggle_language(self):
+        """언어 전환 버튼 클릭 시"""
+        try:
+            current_lang = self.language_manager.get_current_language()
+            
+            # 현재 언어에 따라 반대 언어로 전환
+            new_lang = "KR" if current_lang == "en" else "en"
+            
+            success = self.language_manager.set_language(new_lang)
+            
+            if success:
+                # 버튼 텍스트 업데이트
+                self._update_language_button()
+                
+                lang_name = LanguageManager.LANGUAGES[new_lang]
+                
+                # 간단한 알림 (선택사항)
+                logger.info(f"언어 전환: {lang_name}")             
+        except Exception as e:
+            logger.error(f"언어 전환 실패: {e}")
+
+    def _update_language_button(self):
+        """언어 버튼 텍스트 업데이트"""
+        if not hasattr(self.ui, 'language_toggle_btn'):
+            return
+        
+        current_lang = self.language_manager.get_current_language()
+        
+        # 현재 언어를 표시 (또는 전환될 언어를 표시)
+        # 옵션 1: 현재 언어 표시
+        button_text = "EN" if current_lang == "en" else "KR"
+        
+        # 옵션 2: 전환될 언어 표시 (클릭하면 바뀔 언어)
+        # button_text = "KR" if current_lang == "en" else "EN"
+        
+        self.ui.language_toggle_btn.setText(button_text)
+        
+        # 툴팁 추가
+        tooltip = {
+            "en": "Switch to KRrean (한국어로 전환)",
+            "KR": "Switch to English (영어로 전환)"
+        }
+        self.ui.language_toggle_btn.setToolTip(tooltip.get(current_lang, ""))
+        
+    def show_font_menu(self):
+        """폰트 크기 메뉴 표시"""
+        try:
+            menu = QtWidgets.QMenu(self)
+            
+            # 액션 그룹 (라디오 버튼처럼 하나만 선택)
+            action_group = QtWidgets.QActionGroup(menu)
+            action_group.setExclusive(True)
+            
+            for size_name in ["Small", "Medium", "Large", "Extra Large"]:
+                action = QtWidgets.QAction(size_name, menu)
+                action.setCheckable(True)
+                
+                # 현재 크기면 체크
+                if size_name == self.font_manager.get_current_size_name():
+                    action.setChecked(True)
+                
+                # 크기 변경 연결
+                action.triggered.connect(
+                    lambda checked, name=size_name: self._on_font_size_changed(name)
+                )
+                
+                action_group.addAction(action)
+                menu.addAction(action)
+            
+            # 버튼 아래에 메뉴 표시
+            button = self.ui.font_menu_btn
+            menu.exec_(button.mapToGlobal(
+                QtCore.QPoint(0, button.height())
+            ))
+            
+        except Exception as e:
+            logger.error(f"폰트 메뉴 표시 실패: {e}")
+
+    def _on_font_size_changed(self, size_name: str):
+        """폰트 크기 변경 시 호출"""
+        try:
+            success = self.font_manager.apply_font_size(size_name)
+            if success:
+                ErrorHandler.show_success(
+                    "Font Size Changed",
+                    f"폰트 크기가 {size_name}으로 변경되었습니다.\n"
+                    "일부 요소는 프로그램 재시작 후 적용됩니다.",
+                    self
+                )
+        except Exception as e:
+            logger.error(f"폰트 크기 변경 실패: {e}")
+
+    def show_about_dialog(self):
+        """About 다이얼로그 표시 (언어 지원)"""
+        try:
+            dialog = AboutDialog(self, self.language_manager)
+            dialog.exec_()
+        except Exception as e:
+            logger.error(f"About 다이얼로그 표시 실패: {e}")
+    
+    def show_settings_menu(self):
+        """설정 메뉴 표시 (언어 메뉴 추가)"""
+        try:
+            menu = QtWidgets.QMenu(self)
+            
+            # 폰트 크기 서브메뉴
+            self.font_manager.create_font_menu(menu)
+            
+            # 구분선
+            menu.addSeparator()
+            
+            # ===== 언어 서브메뉴 =====
+            lang_menu = menu.addMenu(f"🌐 {self.language_manager.translate('menu.language')}")
+            
+            # 액션 그룹
+            lang_action_group = QtWidgets.QActionGroup(menu)
+            lang_action_group.setExclusive(True)
+            
+            for lang_code, lang_name in LanguageManager.LANGUAGES.items():
+                action = QtWidgets.QAction(lang_name, menu)
+                action.setCheckable(True)
+                
+                # 현재 언어면 체크
+                if lang_code == self.language_manager.get_current_language():
+                    action.setChecked(True)
+                
+                # 언어 변경 연결
+                action.triggered.connect(
+                    lambda checked, code=lang_code: self._on_language_menu_clicked(code)
+                )
+                
+                lang_action_group.addAction(action)
+                lang_menu.addAction(action)
+            
+            # 구분선
+            menu.addSeparator()
+            
+            # About
+            about_action = menu.addAction(f"ℹ️  {self.language_manager.translate('menu.about')}")
+            about_action.triggered.connect(self.show_about_dialog)
+            
+            # 버튼 아래에 메뉴 표시
+            if hasattr(self.ui, 'settings_menu_btn'):
+                button = self.ui.settings_menu_btn
+                menu.exec_(button.mapToGlobal(QtCore.QPoint(0, button.height())))
+            
+        except Exception as e:
+            logger.error(f"설정 메뉴 표시 실패: {e}")
+
+    def _on_language_menu_clicked(self, lang_code: str):
+        """언어 메뉴 클릭 시"""
+        try:
+            success = self.language_manager.set_language(lang_code)
+            
+            if success:
+                lang_name = LanguageManager.LANGUAGES[lang_code]
+                
+                ErrorHandler.show_success(
+                    self.language_manager.translate("msg.language_changed"),
+                    self.language_manager.translate("msg.language_changed_desc").format(lang_name),
+                    self
+                )
+        except Exception as e:
+            logger.error(f"언어 변경 실패: {e}")
+    
+    def on_language_changed(self, lang_code: str):
+        """언어 변경 시그널 수신"""
+        logger.info(f"언어 변경됨: {lang_code}")
+        
+        try:
+            # ===== 메인 UI 재번역 =====
+            self.ui.retranslateUi(self, self.language_manager)
+            
+            # ===== Data 탭 재번역 =====
+            if hasattr(self, 'ss_curve_widget'):
+                self.ss_curve_widget.retranslate()
+                    
+            if hasattr(self, 'preprocessor_widget'):
+                self.preprocessor_widget.retranslate()
+                
+            if hasattr(self, 'multi_compare_widget'):
+                self.multi_compare_widget.retranslate()
+            
+            # ===== Data 서브탭 제목 업데이트 =====
+            if hasattr(self, 'data_sub_tabs'):
+                tr = self.language_manager.translate
+                self.data_sub_tabs.setTabText(0, tr("data.ss_curve"))
+                self.data_sub_tabs.setTabText(1, tr("data.preprocessor"))
+                self.data_sub_tabs.setTabText(2, tr("data.multi_compare"))
+            
+            # 버튼 텍스트 업데이트
+            self._update_language_button()
+            
+            logger.info("✓ UI 텍스트 즉시 업데이트 완료")
+            
+        except Exception as e:
+            logger.error(f"언어 변경 처리 실패: {e}", exc_info=True)
+                    
     def _stop_temp_control_safely(self):
         """
         온도 제어를 안전하게 정지하는 내부 메서드
@@ -468,7 +718,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         except Exception as e:
             logger.error(f"[TEMP_STOP] 온도 제어 정지 중 예외: {e}", exc_info=True)
-
 
     def _restore_window_geometry(self):
         """저장된 윈도우 위치/크기 복원"""
@@ -519,8 +768,8 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception as e:
                 logger.error(f"[TEST] PlotService 시작 실패: {e}")
                 ErrorHandler.show_error(
-                    "파일 오류", 
-                    f"로그 파일을 시작할 수 없습니다:\n{e}",
+                    ErrorHandler._translate("msg.file_error"),
+                    ErrorHandler._translate("msg.log_file_error_desc").format(e),
                     self
                 )
                 return
@@ -823,8 +1072,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.ui.progressBar.setValue(100)
                 
                 ErrorHandler.show_success(
-                    "연결 성공",
-                    f"모터 연결 성공: {port_text} @ {baud}",
+                    ErrorHandler._translate("success.connected"),
+                    ErrorHandler._translate("success.connected_desc").format("Motor", port_text),
                     self
                 )
                 
@@ -837,8 +1086,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 if hasattr(self.ui, "progressBar"): 
                     self.ui.progressBar.setValue(0)
                 ErrorHandler.show_warning(
-                    "서비스 실패",
-                    f"모터 서비스 시작 실패",
+                    ErrorHandler._translate("success.service_failed"),
+                    ErrorHandler._translate("success.service_failed_desc").format("Motor"),
                     self
                 )
         else:
@@ -856,6 +1105,28 @@ class MainWindow(QtWidgets.QMainWindow):
             self.motor = None
             self.basic_test = None
             self.speed_controller.set_motor(None)
+
+    def _check_motor_monitoring(self):
+        """모니터링 상태 디버깅"""
+        if self.motor_manager.is_connected():
+            logger.info("=" * 60)
+            logger.info("[DEBUG] Motor 연결 상태: 정상")
+            
+            if self.motor_manager.monitor:
+                logger.info(f"[DEBUG] Monitor 객체 존재: O")
+                logger.info(f"[DEBUG] Thread 실행 중: {self.motor_manager.monitor.thread.isRunning()}")
+                
+                if hasattr(self.motor_manager.monitor, 'worker'):
+                    logger.info(f"[DEBUG] Worker 존재: O")
+                    logger.info(f"[DEBUG] Worker._running: {self.motor_manager.monitor.worker._running}")
+                    logger.info(f"[DEBUG] Timer 활성: {self.motor_manager.monitor.worker.timer.isActive()}")
+                    logger.info(f"[DEBUG] Timer 간격: {self.motor_manager.monitor.worker.timer.interval()} ms")
+                else:
+                    logger.error("[DEBUG] Worker 객체 없음!")
+            else:
+                logger.error("[DEBUG] Monitor 객체 없음!")
+            
+            logger.info("=" * 60)
 
     def on_com_disconnect_motor(self):
         self._stop_all_tests(reason="모터 연결 해제")
@@ -881,8 +1152,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.progressBar.setValue(0)
         
         logger.info("모터 연결을 해제했습니다.")
-        ErrorHandler.show_info("연결 해제", "모터 연결을 해제했습니다.", self)
-        
+        ErrorHandler.show_info(
+            ErrorHandler._translate("success.disconnected"),
+            ErrorHandler._translate("success.disconnected_desc").format("Motor"),
+            self
+        )
         if hasattr(self.ui, "Comconnect_pushButton"):
             self.ui.Comconnect_pushButton.setEnabled(True)
         if hasattr(self.ui, "Comdisconnect_pushButton"):
@@ -969,8 +1243,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.ui.progressBar_2.setValue(100)
                 
                 ErrorHandler.show_success(
-                    "연결 성공",
-                    f"로드셀 연결 성공: {port_text} @ {baud}",
+                    ErrorHandler._translate("success.connected"),
+                    ErrorHandler._translate("success.connected_desc").format("LoadCell", port_text),
                     self
                 )
                 
@@ -996,7 +1270,11 @@ class MainWindow(QtWidgets.QMainWindow):
             if hasattr(self.ui, "progressBar_2"): 
                 self.ui.progressBar_2.setValue(0)
         
-            ErrorHandler.show_connection_error("Loadcell", port_text, err or "", self)
+            ErrorHandler.show_warning(
+            ErrorHandler._translate("success.service_failed"),
+            ErrorHandler._translate("success.service_failed_desc").format("Loadcell"),
+            self
+        )
             
             if hasattr(self.ui, "Comconnect_pushButton_2"):
                 self.ui.Comconnect_pushButton_2.setEnabled(True)
@@ -1028,7 +1306,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.progressBar_2.setValue(0)
 
         logger.info("로드셀 연결을 해제했습니다.")
-        ErrorHandler.show_info("연결 해제", "로드셀 연결을 해제했습니다.", self)
+        ErrorHandler.show_info(
+        ErrorHandler._translate("success.disconnected"),
+        ErrorHandler._translate("success.disconnected_desc").format("Loadcell"),
+        self
+    )
 
         if hasattr(self.ui, "Comconnect_pushButton_2"):
             self.ui.Comconnect_pushButton_2.setEnabled(True)
@@ -1094,8 +1376,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not port_text:
             self.refresh_com_ports()
             ErrorHandler.show_info(
-                "포트 선택 필요", 
-                "포트를 선택하거나 장치를 연결하세요.",
+                ErrorHandler._translate("error.port_required"),
+                ErrorHandler._translate("error.select_port"),
                 self
             )
             return
@@ -1125,7 +1407,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 
                 if chk.isError():
                     ok = False
-                    err = f"Modbus 응답 에러: {chk}"
+                    err = f"Modbus Error: {chk}"
                     logger.error(f"[TEMP] Handshake 실패: {err}")
                     self.temp_client.close()
                 else:
@@ -1133,7 +1415,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     logger.info(f"[TEMP] Handshake 성공. 데이터: {chk.registers}")
             else:
                 ok = False
-                err = "포트를 열 수 없습니다."
+                err = "Could not open port"
 
         except Exception as e:
             ok = False
@@ -1156,8 +1438,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.settings_mgr.save_temp_baudrate(baud)
                     
                     ErrorHandler.show_success(
-                        "연결 성공", 
-                        f"온도 제어기 연결 성공: {port_text}",
+                        ErrorHandler._translate("success.connected"),
+                        ErrorHandler._translate("success.connected_desc").format("Temp Controller", port_text),
                         self
                     )
                     
@@ -1168,8 +1450,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 else:
                     logger.error("TempManager 서비스 시작 실패")
                     ErrorHandler.show_warning(
-                        "서비스 실패", 
-                        "온도 제어 서비스 시작 실패",
+                        ErrorHandler._translate("success.service_failed"),
+                        ErrorHandler._translate("success.service_failed_desc").format("Temp Controller"),
                         self
                     )
         else:
@@ -1186,10 +1468,10 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # 약간의 대기 시간 (Modbus 명령 완료 대기)
         QtCore.QTimer.singleShot(
-        temp_cfg.DISCONNECT_DELAY_MS,  # ← 200 대신
-        self._finalize_temp_disconnect
+            temp_cfg.DISCONNECT_DELAY_MS,
+            self._finalize_temp_disconnect
         )
-    
+
     def _finalize_temp_disconnect(self):
         """온도 제어기 연결 해제 완료"""
         try:
@@ -1203,7 +1485,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.temp_manager.stop_service()
 
         logger.info("온도 제어기 연결을 해제했습니다.")
-        ErrorHandler.show_info("연결 해제", "온도 제어기 연결을 해제했습니다.", self)
+        ErrorHandler.show_info(
+            ErrorHandler._translate("success.disconnected"),
+            ErrorHandler._translate("success.disconnected_desc").format("Temp Controller"),
+            self
+        )
 
         if hasattr(self.ui, "Comconnect_pushButton_3"):
             self.ui.Comconnect_pushButton_3.setEnabled(True)
@@ -1216,17 +1502,21 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.ui, "temp_stop_btn"):
             self.ui.temp_stop_btn.setEnabled(False)
 
-
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle("Fusion")
     
+    # 폰트 설정
     try:
-        app_font = QtGui.QFont("Pretendard", 10, QtGui.QFont.DemiBold)
+        app_font = QtGui.QFont("Pretendard", 14, QtGui.QFont.DemiBold)
     except Exception:
-        app_font = QtGui.QFont("Arial", 10, QtGui.QFont.Bold)
+        app_font = QtGui.QFont("Arial", 14, QtGui.QFont.Bold)
     app.setFont(app_font)
     
     window = MainWindow()
+    
+    window.ui.set_language_manager(window.language_manager)
+    window.ui.retranslateUi(window, window.language_manager)
+    
     window.show()
     sys.exit(app.exec_())

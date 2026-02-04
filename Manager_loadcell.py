@@ -123,4 +123,5 @@ class LoadcellManager:
         """모니터링 상태 확인"""
         return (self.monitor is not None and 
                 hasattr(self.monitor, 'worker') and 
+                hasattr(self.monitor.worker, '_running') and
                 self.monitor.worker._running)
